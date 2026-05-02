@@ -3,8 +3,8 @@ package me.cortex.voxy.common.thread;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.Pair;
 import me.cortex.voxy.common.util.TrackedObject;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 
 import java.util.Arrays;
 import java.util.concurrent.Semaphore;
@@ -78,7 +78,7 @@ public class ServiceSlice extends TrackedObject {
             ctx.run();
         } catch (Exception e) {
             Logger.error("Unexpected error occurred while executing a service job, expect things to break badly: " + this.name, e);
-            MinecraftClient.getInstance().execute(()->MinecraftClient.getInstance().player.sendMessage(Text.literal("A voxy service had an exception while executing please check logs and report error"), true));
+            Minecraft.getInstance().execute(()->Minecraft.getInstance().player.displayClientMessage(Component.literal("A voxy service had an exception while executing please check logs and report error"), true));
         } finally {
             if (this.activeCount.decrementAndGet() < 0) {
                 throw new IllegalStateException("Alive count negative!: " + this.name);

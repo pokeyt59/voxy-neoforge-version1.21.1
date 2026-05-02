@@ -87,7 +87,7 @@ public abstract class VoxyInstance {
             } else {
                 if (world.isLive()) {
                     if (world.instanceIn != this) {
-                        throw new IllegalStateException("World cannot be in identifier cache, alive and not part of this instance");
+                        throw new IllegalStateException("Level cannot be in identifier cache, alive and not part of this instance");
                     }
                     //Successful cache hit
                 } else {

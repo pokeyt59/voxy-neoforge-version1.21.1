@@ -12,27 +12,26 @@ import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import me.cortex.voxy.common.world.other.Mapper;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.FluidBlock;
-import net.minecraft.block.LeavesBlock;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.color.block.BlockColorProvider;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.util.Pair;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.BlockRenderView;
-import net.minecraft.world.LightType;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.BiomeKeys;
-import net.minecraft.world.biome.ColorResolver;
-import net.minecraft.world.chunk.light.LightingProvider;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.level.block.LeavesBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.color.block.BlockColor;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.core.registries.Registries;
+import com.mojang.datafixers.util.Pair;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.Biomes;
+import net.minecraft.world.level.ColorResolver;
+import net.minecraft.world.level.lighting.LevelLightEngine;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.system.MemoryUtil;
 
@@ -65,7 +64,7 @@ public class ModelFactory {
         }
     }
 
-    private final Biome DEFAULT_BIOME = MinecraftClient.getInstance().world.getRegistryManager().get(RegistryKeys.BIOME).get(BiomeKeys.PLAINS);
+    private final Biome DEFAULT_BIOME = Minecraft.getInstance().level.registryAccess().registryOrThrow(Registries.BIOME).get(Biomes.PLAINS);
 
     public final ModelTextureBakery bakery;
 
@@ -163,10 +162,10 @@ public class ModelFactory {
 
         //Before we enqueue the baking of this blockstate, we must check if it has a fluid state associated with it
         // if it does, we must ensure that it is (effectivly) baked BEFORE we bake this blockstate
-        boolean isFluid = blockState.getBlock() instanceof FluidBlock;
+        boolean isFluid = blockState.getBlock() instanceof LiquidBlock;
         if ((!isFluid) && (!blockState.getFluidState().isEmpty())) {
             //Insert into the fluid LUT
-            var fluidState = blockState.getFluidState().getBlockState();
+            var fluidState = blockState.getFluidState().createLegacyBlock();
 
             int fluidStateId = this.mapper.getIdForBlockState(fluidState);
 
@@ -216,7 +215,7 @@ public class ModelFactory {
             throw new IllegalStateException("processing a texture bake result but the block state was not in flight!!");
         }
 
-        boolean isFluid = blockState.getBlock() instanceof FluidBlock;
+        boolean isFluid = blockState.getBlock() instanceof LiquidBlock;
         int modelId = -1;
 
 
@@ -224,7 +223,7 @@ public class ModelFactory {
 
         if ((!isFluid) && (!blockState.getFluidState().isEmpty())) {
             //Insert into the fluid LUT
-            var fluidState = blockState.getFluidState().getBlockState();
+            var fluidState = blockState.getFluidState().createLegacyBlock();
 
             int fluidStateId = this.mapper.getIdForBlockState(fluidState);
 
@@ -259,19 +258,19 @@ public class ModelFactory {
             this.fluidStateLUT[modelId] = clientFluidStateId;
         }
 
-        RenderLayer renderLayer = null;
-        if (blockState.getBlock() instanceof FluidBlock) {
-            renderLayer = RenderLayers.getFluidLayer(blockState.getFluidState());
+        RenderType renderLayer = null;
+        if (blockState.getBlock() instanceof LiquidBlock) {
+            renderLayer = ItemBlockRenderTypes.getRenderLayer(blockState.getFluidState());
         } else {
             if (blockState.getBlock() instanceof LeavesBlock) {
-                renderLayer = RenderLayer.getSolid();
+                renderLayer = RenderType.solid();
             } else {
-                renderLayer = RenderLayers.getBlockLayer(blockState);
+                renderLayer = ItemBlockRenderTypes.getChunkRenderType(blockState);
             }
         }
 
 
-        int checkMode = renderLayer==RenderLayer.getSolid()?TextureUtils.WRITE_CHECK_STENCIL:TextureUtils.WRITE_CHECK_ALPHA;
+        int checkMode = renderLayer==RenderType.solid()?TextureUtils.WRITE_CHECK_STENCIL:TextureUtils.WRITE_CHECK_ALPHA;
 
 
         var colourProvider = getColourProvider(blockState.getBlock());
@@ -314,7 +313,7 @@ public class ModelFactory {
             boolean allFalse = true;
             //Guestimation test for if the block culls itself
             for (var dir : Direction.values()) {
-                if (blockState.isSideInvisible(blockState, dir)) {
+                if (blockState.skipRendering(blockState, dir)) {
                     allFalse = false;
                 } else {
                     allTrue = false;
@@ -336,7 +335,7 @@ public class ModelFactory {
         //Each face gets 1 byte, with the top 2 bytes being for whatever
         long metadata = 0;
         metadata |= isBiomeColourDependent?1:0;
-        metadata |= renderLayer == RenderLayer.getTranslucent()?2:0;
+        metadata |= renderLayer == RenderType.translucent()?2:0;
         metadata |= needsDoubleSidedQuads?4:0;
         metadata |= ((!isFluid) && !blockState.getFluidState().isEmpty())?8:0;//Has a fluid state accosiacted with it and is not itself a fluid
         metadata |= isFluid?16:0;//Is a fluid
@@ -370,7 +369,7 @@ public class ModelFactory {
 
             //TODO: add alot of config options for the following
             boolean occludesFace = true;
-            occludesFace &= renderLayer != RenderLayer.getTranslucent();//If its translucent, it doesnt occlude
+            occludesFace &= renderLayer != RenderType.translucent();//If its translucent, it doesnt occlude
 
             //TODO: make this an option, basicly if the face is really close, it occludes otherwise it doesnt
             occludesFace &= offset < 0.1;//If the face is rendered far away from the other face, then it doesnt occlude
@@ -390,7 +389,7 @@ public class ModelFactory {
             metadata |= canBeOccluded?4:0;
 
             //Face uses its own lighting if its not flat against the adjacent block & isnt traslucent
-            metadata |= (offset > 0.01 || renderLayer == RenderLayer.getTranslucent())?0b1000:0;
+            metadata |= (offset > 0.01 || renderLayer == RenderType.translucent())?0b1000:0;
 
 
 
@@ -408,11 +407,11 @@ public class ModelFactory {
             int area = (faceSize[1]-faceSize[0]+1) * (faceSize[3]-faceSize[2]+1);
             boolean needsAlphaDiscard = ((float)writeCount)/area<0.9;//If the amount of area covered by written pixels is less than a threashold, disable discard as its not needed
 
-            needsAlphaDiscard |= renderLayer != RenderLayer.getSolid();
-            needsAlphaDiscard &= renderLayer != RenderLayer.getTranslucent();//Translucent doesnt have alpha discard
+            needsAlphaDiscard |= renderLayer != RenderType.solid();
+            needsAlphaDiscard &= renderLayer != RenderType.translucent();//Translucent doesnt have alpha discard
             faceModelData |= needsAlphaDiscard?1<<22:0;
 
-            faceModelData |= ((!faceCoversFullBlock)&&renderLayer != RenderLayer.getTranslucent())?1<<23:0;//Alpha discard override, translucency doesnt have alpha discard
+            faceModelData |= ((!faceCoversFullBlock)&&renderLayer != RenderType.translucent())?1<<23:0;//Alpha discard override, translucency doesnt have alpha discard
 
             //Bits 24,25 are tint metadata
             if (colourProvider!=null) {//We have a tint
@@ -440,10 +439,10 @@ public class ModelFactory {
         int modelFlags = 0;
         modelFlags |= colourProvider != null?1:0;
         modelFlags |= isBiomeColourDependent?2:0;//Basicly whether to use the next int as a colour or as a base index/id into a colour buffer for biome dependent colours
-        modelFlags |= renderLayer == RenderLayer.getTranslucent()?4:0;//Is translucent
-        modelFlags |= renderLayer == RenderLayer.getCutout()?0:8;//Dont use mipmaps (AND ALSO FKING SPECIFIES IF IT HAS AO, WHY??? GREAT QUESTION, TODO FIXE THIS)
+        modelFlags |= renderLayer == RenderType.translucent()?4:0;//Is translucent
+        modelFlags |= renderLayer == RenderType.cutout()?0:8;//Dont use mipmaps (AND ALSO FKING SPECIFIES IF IT HAS AO, WHY??? GREAT QUESTION, TODO FIXE THIS)
 
-        //modelFlags |= blockRenderLayer == RenderLayer.getSolid()?0:1;// should discard alpha
+        //modelFlags |= blockRenderLayer == RenderType.solid()?0:1;// should discard alpha
         MemoryUtil.memPutInt(uploadPtr, modelFlags); uploadPtr += 4;
 
 
@@ -513,29 +512,29 @@ public class ModelFactory {
 
         int i = 0;
         for (var entry : this.modelsRequiringBiomeColours) {
-            var colourProvider = getColourProvider(entry.getRight().getBlock());
+            var colourProvider = getColourProvider(entry.getSecond().getBlock());
             if (colourProvider == null) {
                 throw new IllegalStateException();
             }
             //Populate the list of biomes for the model state
             int biomeIndex = (i++) * this.biomes.size();
-            MemoryUtil.memPutInt(UploadStream.INSTANCE.upload(this.storage.modelBuffer, (entry.getLeft()* MODEL_SIZE)+ 4*6 + 4, 4), biomeIndex);
+            MemoryUtil.memPutInt(UploadStream.INSTANCE.upload(this.storage.modelBuffer, (entry.getFirst()* MODEL_SIZE)+ 4*6 + 4, 4), biomeIndex);
             long clrUploadPtr = UploadStream.INSTANCE.upload(this.storage.modelColourBuffer, biomeIndex * 4L, 4L * this.biomes.size());
             for (var biomeE : this.biomes) {
                 if (biomeE == null) {
                     continue;//If null, ignore
                 }
-                MemoryUtil.memPutInt(clrUploadPtr, captureColourConstant(colourProvider, entry.getRight(), biomeE)|0xFF000000); clrUploadPtr += 4;
+                MemoryUtil.memPutInt(clrUploadPtr, captureColourConstant(colourProvider, entry.getSecond(), biomeE)|0xFF000000); clrUploadPtr += 4;
             }
         }
 
         UploadStream.INSTANCE.commit();
     }
 
-    private static BlockColorProvider getColourProvider(Block block) {
-        BlockState defaultState = block.getDefaultState();
-        var blockColors = MinecraftClient.getInstance().getBlockColors();
-        int color = blockColors.getColor(defaultState, null, BlockPos.ORIGIN, 0);
+    private static BlockColor getColourProvider(Block block) {
+        BlockState defaultState = block.defaultBlockState();
+        var blockColors = Minecraft.getInstance().getBlockColors();
+        int color = blockColors.getColor(defaultState, null, BlockPos.ZERO, 0);
         if (color != 0) {
             return (state, world, pos, tintIndex) -> blockColors.getColor(state, world, pos, tintIndex);
         }
@@ -545,25 +544,20 @@ public class ModelFactory {
     //TODO: add a method to detect biome dependent colours (can do by detecting if getColor is ever called)
     // if it is, need to add it to a list and mark it as biome colour dependent or something then the shader
     // will either use the uint as an index or a direct colour multiplier
-    private static int captureColourConstant(BlockColorProvider colorProvider, BlockState state, Biome biome) {
-        return colorProvider.getColor(state, new BlockRenderView() {
+    private static int captureColourConstant(BlockColor colorProvider, BlockState state, Biome biome) {
+        return colorProvider.getColor(state, new BlockAndTintGetter() {
             @Override
-            public float getBrightness(Direction direction, boolean shaded) {
+            public float getShade(Direction direction, boolean shaded) {
                 return 0;
             }
 
             @Override
-            public int getLightLevel(LightType type, BlockPos pos) {
-                return 0;
-            }
-
-            @Override
-            public LightingProvider getLightingProvider() {
+            public LevelLightEngine getLightEngine() {
                 return null;
             }
 
             @Override
-            public int getColor(BlockPos pos, ColorResolver colorResolver) {
+            public int getBlockTint(BlockPos pos, ColorResolver colorResolver) {
                 return colorResolver.getColor(biome, 0, 0);
             }
 
@@ -589,32 +583,27 @@ public class ModelFactory {
             }
 
             @Override
-            public int getBottomY() {
+            public int getMinBuildHeight() {
                 return 0;
             }
-        }, BlockPos.ORIGIN, 0);
+        }, BlockPos.ZERO, 0);
     }
 
-    private static boolean isBiomeDependentColour(BlockColorProvider colorProvider, BlockState state) {
+    private static boolean isBiomeDependentColour(BlockColor colorProvider, BlockState state) {
         boolean[] biomeDependent = new boolean[1];
-        colorProvider.getColor(state, new BlockRenderView() {
+        colorProvider.getColor(state, new BlockAndTintGetter() {
             @Override
-            public float getBrightness(Direction direction, boolean shaded) {
+            public float getShade(Direction direction, boolean shaded) {
                 return 0;
             }
 
             @Override
-            public int getLightLevel(LightType type, BlockPos pos) {
-                return 0;
-            }
-
-            @Override
-            public LightingProvider getLightingProvider() {
+            public LevelLightEngine getLightEngine() {
                 return null;
             }
 
             @Override
-            public int getColor(BlockPos pos, ColorResolver colorResolver) {
+            public int getBlockTint(BlockPos pos, ColorResolver colorResolver) {
                 biomeDependent[0] = true;
                 return 0;
             }
@@ -641,17 +630,17 @@ public class ModelFactory {
             }
 
             @Override
-            public int getBottomY() {
+            public int getMinBuildHeight() {
                 return 0;
             }
-        }, BlockPos.ORIGIN, 0);
+        }, BlockPos.ZERO, 0);
         return biomeDependent[0];
     }
 
     private float[] computeModelDepth(ColourDepthTextureData[] textures, int checkMode) {
         float[] res = new float[6];
         for (var dir : Direction.values()) {
-            var data = textures[dir.getId()];
+            var data = textures[dir.get3DDataValue()];
             float fd = TextureUtils.computeDepth(data, TextureUtils.DEPTH_MODE_AVG, checkMode);//Compute the min float depth, smaller means closer to the camera, range 0-1
             //int depth = Math.round(fd * MODEL_TEXTURE_SIZE);
             //If fd is -1, it means that there was nothing rendered on that face and it should be discarded

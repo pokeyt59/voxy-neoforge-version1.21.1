@@ -10,10 +10,10 @@ import me.cortex.voxy.commonImpl.VoxyCommon;
 import me.cortex.voxy.commonImpl.WorldIdentifier;
 import me.cortex.voxy.commonImpl.importers.DHImporter;
 import me.cortex.voxy.commonImpl.importers.WorldImporter;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
-import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.command.CommandSource;
+import net.minecraft.client.Minecraft;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
 
 import java.io.File;
 import java.io.IOException;
@@ -24,133 +24,116 @@ import java.util.concurrent.CompletableFuture;
 
 public class VoxyCommands {
 
-    public static LiteralArgumentBuilder<FabricClientCommandSource> register() {
-        var imports = ClientCommandManager.literal("import")
-                .then(ClientCommandManager.literal("world")
-                        .then(ClientCommandManager.argument("world_name", StringArgumentType.string())
+    public static LiteralArgumentBuilder<CommandSourceStack> register() {
+        var imports = Commands.literal("import")
+                .then(Commands.literal("world")
+                        .then(Commands.argument("world_name", StringArgumentType.string())
                                 .suggests(VoxyCommands::importWorldSuggester)
                                 .executes(VoxyCommands::importWorld)))
-                .then(ClientCommandManager.literal("bobby")
-                        .then(ClientCommandManager.argument("world_name", StringArgumentType.string())
+                .then(Commands.literal("bobby")
+                        .then(Commands.argument("world_name", StringArgumentType.string())
                                 .suggests(VoxyCommands::importBobbySuggester)
                                 .executes(VoxyCommands::importBobby)))
-                .then(ClientCommandManager.literal("raw")
-                        .then(ClientCommandManager.argument("path", StringArgumentType.string())
+                .then(Commands.literal("raw")
+                        .then(Commands.argument("path", StringArgumentType.string())
                                 .executes(VoxyCommands::importRaw)))
-                .then(ClientCommandManager.literal("zip")
-                        .then(ClientCommandManager.argument("zipPath", StringArgumentType.string())
+                .then(Commands.literal("zip")
+                        .then(Commands.argument("zipPath", StringArgumentType.string())
                                 .executes(VoxyCommands::importZip)
-                                .then(ClientCommandManager.argument("innerPath", StringArgumentType.string())
+                                .then(Commands.argument("innerPath", StringArgumentType.string())
                                         .executes(VoxyCommands::importZip))))
-                .then(ClientCommandManager.literal("cancel")
+                .then(Commands.literal("cancel")
                         .executes(VoxyCommands::cancelImport));
 
         if (DHImporter.HasRequiredLibraries) {
             imports = imports
-                    .then(ClientCommandManager.literal("distant_horizons")
-                    .then(ClientCommandManager.argument("sqlDbPath", StringArgumentType.string())
+                    .then(Commands.literal("distant_horizons")
+                    .then(Commands.argument("sqlDbPath", StringArgumentType.string())
                             .executes(VoxyCommands::importDistantHorizons)));
         }
 
-        return ClientCommandManager.literal("voxy").requires((ctx)-> VoxyCommon.getInstance() != null)
-                .then(ClientCommandManager.literal("reload")
+        return Commands.literal("voxy").requires(ctx -> VoxyCommon.getInstance() != null)
+                .then(Commands.literal("reload")
                         .executes(VoxyCommands::reloadInstance))
                 .then(imports);
     }
 
-    private static int reloadInstance(CommandContext<FabricClientCommandSource> ctx) {
-        var instance = (VoxyClientInstance)VoxyCommon.getInstance();
-        if (instance == null) {
-            return 1;
-        }
-        var wr = MinecraftClient.getInstance().worldRenderer;
-        if (wr!=null) {
-            ((IGetVoxyRenderSystem)wr).shutdownRenderer();
-        }
+    private static int reloadInstance(CommandContext<CommandSourceStack> ctx) {
+        var instance = (VoxyClientInstance) VoxyCommon.getInstance();
+        if (instance == null) return 1;
 
+        var wr = Minecraft.getInstance().levelRenderer;
+        if (wr != null) ((IGetVoxyRenderSystem) wr).shutdownRenderer();
         VoxyCommon.shutdownInstance();
         VoxyCommon.createInstance();
-        if (wr!=null) {
-            ((IGetVoxyRenderSystem)wr).createRenderer();
-        }
+        if (wr != null) ((IGetVoxyRenderSystem) wr).createRenderer();
         return 0;
     }
 
+    private static int importDistantHorizons(CommandContext<CommandSourceStack> ctx) {
+        var instance = (VoxyClientInstance) VoxyCommon.getInstance();
+        if (instance == null) return 1;
 
-
-
-    private static int importDistantHorizons(CommandContext<FabricClientCommandSource> ctx) {
-        var instance = (VoxyClientInstance)VoxyCommon.getInstance();
-        if (instance == null) {
-            return 1;
-        }
         var dbFile = new File(ctx.getArgument("sqlDbPath", String.class));
-        if (!dbFile.exists()) {
-            return 1;
-        }
+        if (!dbFile.exists()) return 1;
         if (dbFile.isDirectory()) {
             dbFile = dbFile.toPath().resolve("DistantHorizons.sqlite").toFile();
-            if (!dbFile.exists()) {
-                return 1;
-            }
+            if (!dbFile.exists()) return 1;
         }
 
         File dbFile_ = dbFile;
-        var engine = WorldIdentifier.ofEngine(MinecraftClient.getInstance().player.clientWorld);
-        if (engine==null)return 1;
-        return instance.getImportManager().makeAndRunIfNone(engine, ()->
-                new DHImporter(dbFile_, engine, MinecraftClient.getInstance().player.clientWorld, instance.getThreadPool(), instance.savingServiceRateLimiter))?0:1;
+        var engine = WorldIdentifier.ofEngine(Minecraft.getInstance().player.clientLevel);
+        if (engine == null) return 1;
+        return instance.getImportManager().makeAndRunIfNone(engine, () ->
+                new DHImporter(dbFile_, engine, Minecraft.getInstance().player.clientLevel,
+                        instance.getThreadPool(), instance.savingServiceRateLimiter)) ? 0 : 1;
     }
 
     private static boolean fileBasedImporter(File directory) {
-        var instance = (VoxyClientInstance)VoxyCommon.getInstance();
-        if (instance == null) {
-            return false;
-        }
+        var instance = (VoxyClientInstance) VoxyCommon.getInstance();
+        if (instance == null) return false;
 
-        var engine = WorldIdentifier.ofEngine(MinecraftClient.getInstance().player.clientWorld);
-        if (engine==null) return false;
-        return instance.getImportManager().makeAndRunIfNone(engine, ()->{
-            var importer = new WorldImporter(engine, MinecraftClient.getInstance().player.clientWorld, instance.getThreadPool(), instance.savingServiceRateLimiter);
+        var engine = WorldIdentifier.ofEngine(Minecraft.getInstance().player.clientLevel);
+        if (engine == null) return false;
+        return instance.getImportManager().makeAndRunIfNone(engine, () -> {
+            var importer = new WorldImporter(engine, Minecraft.getInstance().player.clientLevel,
+                    instance.getThreadPool(), instance.savingServiceRateLimiter);
             importer.importRegionDirectoryAsync(directory);
             return importer;
         });
     }
 
-    private static int importRaw(CommandContext<FabricClientCommandSource> ctx) {
-        return fileBasedImporter(new File(ctx.getArgument("path", String.class)))?0:1;
+    private static int importRaw(CommandContext<CommandSourceStack> ctx) {
+        return fileBasedImporter(new File(ctx.getArgument("path", String.class))) ? 0 : 1;
     }
 
-    private static int importBobby(CommandContext<FabricClientCommandSource> ctx) {
+    private static int importBobby(CommandContext<CommandSourceStack> ctx) {
         var file = new File(".bobby").toPath().resolve(ctx.getArgument("world_name", String.class)).toFile();
-        return fileBasedImporter(file)?0:1;
+        return fileBasedImporter(file) ? 0 : 1;
     }
 
-    private static CompletableFuture<Suggestions> importWorldSuggester(CommandContext<FabricClientCommandSource> ctx, SuggestionsBuilder sb) {
-        return fileDirectorySuggester(MinecraftClient.getInstance().runDirectory.toPath().resolve("saves"), sb);
+    private static CompletableFuture<Suggestions> importWorldSuggester(CommandContext<CommandSourceStack> ctx, SuggestionsBuilder sb) {
+        return fileDirectorySuggester(Minecraft.getInstance().gameDirectory.toPath().resolve("saves"), sb);
     }
-    private static CompletableFuture<Suggestions> importBobbySuggester(CommandContext<FabricClientCommandSource> ctx, SuggestionsBuilder sb) {
-        return fileDirectorySuggester(MinecraftClient.getInstance().runDirectory.toPath().resolve(".bobby"), sb);
+
+    private static CompletableFuture<Suggestions> importBobbySuggester(CommandContext<CommandSourceStack> ctx, SuggestionsBuilder sb) {
+        return fileDirectorySuggester(Minecraft.getInstance().gameDirectory.toPath().resolve(".bobby"), sb);
     }
 
     private static CompletableFuture<Suggestions> fileDirectorySuggester(Path dir, SuggestionsBuilder sb) {
         var str = sb.getRemaining().replace("\\\\", "\\").replace("\\", "/");
-        if (str.startsWith("\"")) {
-            str = str.substring(1);
-        }
-        if (str.endsWith("\"")) {
-            str = str.substring(0,str.length()-1);
-        }
+        if (str.startsWith("\"")) str = str.substring(1);
+        if (str.endsWith("\""))   str = str.substring(0, str.length() - 1);
         var remaining = str;
         if (str.contains("/")) {
             int idx = str.lastIndexOf('/');
-            remaining = str.substring(idx+1);
+            remaining = str.substring(idx + 1);
             try {
                 dir = dir.resolve(str.substring(0, idx));
             } catch (Exception e) {
                 return Suggestions.empty();
             }
-            str = str.substring(0, idx+1);
+            str = str.substring(0, idx + 1);
         } else {
             str = "";
         }
@@ -158,53 +141,43 @@ public class VoxyCommands {
         try {
             var worlds = Files.list(dir).toList();
             for (var world : worlds) {
-                if (!world.toFile().isDirectory()) {
-                    continue;
-                }
+                if (!world.toFile().isDirectory()) continue;
                 var wn = world.getFileName().toString();
-                if (wn.equals(remaining)) {
-                    continue;
-                }
-                if (CommandSource.shouldSuggest(remaining, wn) || CommandSource.shouldSuggest(remaining, '"'+wn)) {
-                    wn = str+wn + "/";
+                if (wn.equals(remaining)) continue;
+                if (SharedSuggestionProvider.matchesSubStr(remaining, wn)
+                        || SharedSuggestionProvider.matchesSubStr(remaining, '"' + wn)) {
+                    wn = str + wn + "/";
                     sb.suggest(StringArgumentType.escapeIfRequired(wn));
                 }
             }
-        } catch (IOException e) {}
+        } catch (IOException ignored) {}
 
         return sb.buildFuture();
     }
 
-    private static int importWorld(CommandContext<FabricClientCommandSource> ctx) {
+    private static int importWorld(CommandContext<CommandSourceStack> ctx) {
         var name = ctx.getArgument("world_name", String.class);
         var file = new File("saves").toPath().resolve(name);
         name = name.toLowerCase();
-        if (name.endsWith("/")) {
-            name = name.substring(0, name.length()-1);
-        }
-        if (!(name.endsWith("region"))) {
-            file = file.resolve("region");
-        }
-        return fileBasedImporter(file.toFile())?0:1;
+        if (name.endsWith("/")) name = name.substring(0, name.length() - 1);
+        if (!name.endsWith("region")) file = file.resolve("region");
+        return fileBasedImporter(file.toFile()) ? 0 : 1;
     }
 
-    private static int importZip(CommandContext<FabricClientCommandSource> ctx) {
-        var zip =  new File(ctx.getArgument("zipPath", String.class));
+    private static int importZip(CommandContext<CommandSourceStack> ctx) {
+        var zip = new File(ctx.getArgument("zipPath", String.class));
         var innerDir = "region/";
-        try {
-            innerDir = ctx.getArgument("innerPath", String.class);
-        } catch (Exception e) {}
+        try { innerDir = ctx.getArgument("innerPath", String.class); } catch (Exception ignored) {}
 
-        var instance = (VoxyClientInstance)VoxyCommon.getInstance();
-        if (instance == null) {
-            return 1;
-        }
+        var instance = (VoxyClientInstance) VoxyCommon.getInstance();
+        if (instance == null) return 1;
         String finalInnerDir = innerDir;
 
-        var engine = WorldIdentifier.ofEngine(MinecraftClient.getInstance().player.clientWorld);
+        var engine = WorldIdentifier.ofEngine(Minecraft.getInstance().player.clientLevel);
         if (engine != null) {
             return instance.getImportManager().makeAndRunIfNone(engine, () -> {
-                var importer = new WorldImporter(engine, MinecraftClient.getInstance().player.clientWorld, instance.getThreadPool(), instance.savingServiceRateLimiter);
+                var importer = new WorldImporter(engine, Minecraft.getInstance().player.clientLevel,
+                        instance.getThreadPool(), instance.savingServiceRateLimiter);
                 importer.importZippedRegionDirectoryAsync(zip, finalInnerDir);
                 return importer;
             }) ? 0 : 1;
@@ -212,15 +185,11 @@ public class VoxyCommands {
         return 1;
     }
 
-    private static int cancelImport(CommandContext<FabricClientCommandSource> fabricClientCommandSourceCommandContext) {
-        var instance = (VoxyClientInstance)VoxyCommon.getInstance();
-        if (instance == null) {
-            return 1;
-        }
-        var world = WorldIdentifier.ofEngineNullable(MinecraftClient.getInstance().player.clientWorld);
-        if (world != null) {
-            return instance.getImportManager().cancelImport(world)?0:1;
-        }
+    private static int cancelImport(CommandContext<CommandSourceStack> ctx) {
+        var instance = (VoxyClientInstance) VoxyCommon.getInstance();
+        if (instance == null) return 1;
+        var world = WorldIdentifier.ofEngineNullable(Minecraft.getInstance().player.clientLevel);
+        if (world != null) return instance.getImportManager().cancelImport(world) ? 0 : 1;
         return 1;
     }
 }

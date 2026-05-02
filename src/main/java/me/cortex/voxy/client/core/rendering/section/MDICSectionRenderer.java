@@ -172,7 +172,7 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
     }
 
     private void renderTerrain(MDICViewport viewport, long indirectOffset, long drawCountOffset, int maxDrawCount) {
-        //RenderLayer.getCutoutMipped().startDrawing();
+        //RenderType.getCutoutMipped().startDrawing();
 
 
         glDisable(GL_CULL_FACE);
@@ -193,7 +193,7 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
         glBindSampler(1, 0);
         glBindTextureUnit(1, 0);
 
-        //RenderLayer.getCutoutMipped().endDrawing();
+        //RenderType.getCutoutMipped().endDrawing();
     }
 
     @Override

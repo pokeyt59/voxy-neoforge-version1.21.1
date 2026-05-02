@@ -10,32 +10,32 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import me.cortex.voxy.commonImpl.IWorldGetIdentifier;
 import me.cortex.voxy.commonImpl.WorldIdentifier;
-import net.minecraft.registry.DynamicRegistryManager;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.profiler.Profiler;
-import net.minecraft.world.MutableWorldProperties;
-import net.minecraft.world.World;
-import net.minecraft.world.dimension.DimensionType;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.core.Holder;
+import net.minecraft.util.profiling.ProfilerFiller;
+import net.minecraft.world.level.storage.WritableLevelData;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.dimension.DimensionType;
 
-@Mixin(World.class)
+@Mixin(Level.class)
 public class MixinWorld implements IWorldGetIdentifier {
     @Unique
     private WorldIdentifier identifier;
 
     @Inject(method = "<init>", at = @At("RETURN"))
-    private void voxy$injectIdentifier(MutableWorldProperties properties,
-                                       RegistryKey<World> key,
-                                       DynamicRegistryManager registryManager,
-                                       RegistryEntry<DimensionType> dimensionEntry,
-                                       Supplier<Profiler> profilerSupplier,
+    private void voxy$injectIdentifier(WritableLevelData properties,
+                                       ResourceKey<Level> key,
+                                       RegistryAccess registryManager,
+                                       Holder<DimensionType> dimensionEntry,
+                                       Supplier<ProfilerFiller> profilerSupplier,
                                        boolean isClient,
                                        boolean debugWorld,
                                        long seed,
                                        int maxChainedNeighborUpdates,
                                        CallbackInfo ci) {
         if (key != null) {
-            this.identifier = new WorldIdentifier(key, seed, dimensionEntry == null?null:dimensionEntry.getKey().orElse(null));
+            this.identifier = new WorldIdentifier(key, seed, dimensionEntry == null?null:dimensionEntry.unwrapKey().orElse(null));
         } else {
             this.identifier = null;
         }

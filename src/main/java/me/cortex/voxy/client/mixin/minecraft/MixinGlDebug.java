@@ -2,7 +2,7 @@
 
 // import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 // import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-// import net.minecraft.client.gl.GlDebug;
+// import com.mojang.blaze3d.platform.GlDebug;
 // import org.slf4j.Logger;
 // import org.spongepowered.asm.mixin.Mixin;
 // import org.spongepowered.asm.mixin.Unique;

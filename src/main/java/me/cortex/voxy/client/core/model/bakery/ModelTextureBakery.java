@@ -1,20 +1,22 @@
 package me.cortex.voxy.client.core.model.bakery;
 
-import net.minecraft.block.*;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.random.LocalRandom;
-import net.minecraft.world.BlockRenderView;
-import net.minecraft.world.LightType;
-import net.minecraft.world.biome.ColorResolver;
-import net.minecraft.world.chunk.light.LightingProvider;
+import net.minecraft.world.level.block.*;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.levelgen.LegacyRandomSource;
+import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.ColorResolver;
+import net.minecraft.world.level.lighting.LevelLightEngine;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -41,42 +43,42 @@ public class ModelTextureBakery {
         this.height = height;
     }
 
-    public static int getMetaFromLayer(RenderLayer layer) {
-        boolean hasDiscard = layer == RenderLayer.getCutout() ||
-                layer == RenderLayer.getCutoutMipped() ||
-                layer == RenderLayer.getTripwire();
+    public static int getMetaFromLayer(RenderType layer) {
+        boolean hasDiscard = layer == RenderType.cutout() ||
+                layer == RenderType.cutoutMipped() ||
+                layer == RenderType.tripwire();
 
-        boolean isMipped = layer == RenderLayer.getCutoutMipped() ||
-                layer == RenderLayer.getSolid() ||
-                layer == RenderLayer.getTranslucent() ||
-                layer == RenderLayer.getTripwire();
+        boolean isMipped = layer == RenderType.cutoutMipped() ||
+                layer == RenderType.solid() ||
+                layer == RenderType.translucent() ||
+                layer == RenderType.tripwire();
 
         int meta = hasDiscard?1:0;
         meta |= isMipped?2:0;
         return meta;
     }
 
-    private void bakeBlockModel(BlockState state, RenderLayer layer) {
-        if (state.getRenderType() == BlockRenderType.INVISIBLE) {
+    private void bakeBlockModel(BlockState state, RenderType layer) {
+        if (state.getRenderShape() == RenderShape.INVISIBLE) {
             return;//Dont bake if invisible
         }
-        var model = MinecraftClient.getInstance()
-                .getBakedModelManager()
-                .getBlockModels()
-                .getModel(state);
+        var model = Minecraft.getInstance()
+                .getBlockRenderer()
+                .getBlockModelShaper()
+                .getBlockModel(state);
 
         int meta = getMetaFromLayer(layer);
 
         for (Direction direction : new Direction[]{Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST, null}) {
-            var quads = model.getQuads(state, direction, new LocalRandom(42L));
+            var quads = model.getQuads(state, direction, new LegacyRandomSource(42L));
             for (var quad : quads) {
-                this.vc.quad(quad, meta|(quad.hasColor()?4:0));
+                this.vc.quad(quad, meta|(quad.isTinted()?4:0));
             }
         }
     }
 
 
-    private void bakeFluidState(BlockState state, RenderLayer layer, int face) {
+    private void bakeFluidState(BlockState state, RenderType layer, int face) {
         {
             //TODO: somehow set the tint flag per quad or something?
             int metadata = getMetaFromLayer(layer);
@@ -85,24 +87,19 @@ public class ModelTextureBakery {
             metadata |= 4;//Has tint
             this.vc.setDefaultMeta(metadata);//Set the meta while baking
         }
-        MinecraftClient.getInstance().getBlockRenderManager().renderFluid(BlockPos.ORIGIN, new BlockRenderView() {
+        Minecraft.getInstance().getBlockRenderer().renderLiquid(BlockPos.ZERO, new BlockAndTintGetter() {
             @Override
-            public float getBrightness(Direction direction, boolean shaded) {
+            public float getShade(Direction direction, boolean shaded) {
                 return 0;
             }
 
             @Override
-            public LightingProvider getLightingProvider() {
+            public LevelLightEngine getLightEngine() {
                 return null;
             }
 
             @Override
-            public int getLightLevel(LightType type, BlockPos pos) {
-                return 0;
-            }
-
-            @Override
-            public int getColor(BlockPos pos, ColorResolver colorResolver) {
+            public int getBlockTint(BlockPos pos, ColorResolver colorResolver) {
                 return 0;
             }
 
@@ -115,7 +112,7 @@ public class ModelTextureBakery {
             @Override
             public BlockState getBlockState(BlockPos pos) {
                 if (shouldReturnAirForFluid(pos, face)) {
-                    return Blocks.AIR.getDefaultState();
+                    return Blocks.AIR.defaultBlockState();
                 }
 
                 //Fixme:
@@ -125,7 +122,7 @@ public class ModelTextureBakery {
                 //  doesnt fill the side of the block
 
                 //if (pos.getY() == 1) {
-                //    return Blocks.AIR.getDefaultState();
+                //    return Blocks.AIR.defaultBlockState();
                 //}
                 return state;
             }
@@ -133,7 +130,7 @@ public class ModelTextureBakery {
             @Override
             public FluidState getFluidState(BlockPos pos) {
                 if (shouldReturnAirForFluid(pos, face)) {
-                    return Blocks.AIR.getDefaultState().getFluidState();
+                    return Blocks.AIR.defaultBlockState().getFluidState();
                 }
 
                 return state.getFluidState();
@@ -145,7 +142,7 @@ public class ModelTextureBakery {
             }
 
             @Override
-            public int getBottomY() {
+            public int getMinBuildHeight() {
                 return 0;
             }
         }, this.    vc, state, state.getFluidState());
@@ -153,7 +150,7 @@ public class ModelTextureBakery {
     }
 
     private static boolean shouldReturnAirForFluid(BlockPos pos, int face) {
-        var fv = Direction.byId(face).getVector();
+        var fv = Direction.from3DDataValue(face).getNormal();
         int dot = fv.getX()*pos.getX() + fv.getY()*pos.getY() + fv.getZ()*pos.getZ();
         return dot >= 1;
     }
@@ -167,15 +164,15 @@ public class ModelTextureBakery {
     public void renderToStream(BlockState state, int streamBuffer, int streamOffset) {
         this.capture.clear();
         boolean isBlock = true;
-        RenderLayer layer;
-        if (state.getBlock() instanceof FluidBlock) {
-            layer = RenderLayers.getFluidLayer(state.getFluidState());
+        RenderType layer;
+        if (state.getBlock() instanceof LiquidBlock) {
+            layer = ItemBlockRenderTypes.getRenderLayer(state.getFluidState());
             isBlock = false;
         } else {
             if (state.getBlock() instanceof LeavesBlock) {
-                layer = RenderLayer.getSolid();
+                layer = RenderType.solid();
             } else {
-                layer = RenderLayers.getBlockLayer(state);
+                layer = ItemBlockRenderTypes.getChunkRenderType(state);
             }
         }
 
@@ -193,7 +190,7 @@ public class ModelTextureBakery {
             glEnable(GL_STENCIL_TEST);
             glEnable(GL_DEPTH_TEST);
             glEnable(GL_CULL_FACE);
-            if (layer == RenderLayer.getTranslucent()) {
+            if (layer == RenderType.translucent()) {
                 glEnable(GL_BLEND);
                 glBlendFuncSeparate(GL_ONE_MINUS_DST_ALPHA, GL_DST_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
             } else {
@@ -210,7 +207,7 @@ public class ModelTextureBakery {
             //Bind the capture framebuffer
             glBindFramebuffer(GL_FRAMEBUFFER, this.capture.framebuffer.id);
 
-            blockTextureId = MinecraftClient.getInstance().getTextureManager().getTexture(Identifier.of("minecraft", "textures/atlas/blocks.png")).getGlId();
+            blockTextureId = Minecraft.getInstance().getTextureManager().getTexture(ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png")).getId();
         }
 
         //TODO: fastpath for blocks
@@ -245,7 +242,7 @@ public class ModelTextureBakery {
             glBindVertexArray(0);
         } else {//Is fluid, slow path :(
 
-            if (!(state.getBlock() instanceof FluidBlock)) throw new IllegalStateException();
+            if (!(state.getBlock() instanceof LiquidBlock)) throw new IllegalStateException();
 
             var mat = new Matrix4f();
             for (int i = 0; i < VIEWS.length; i++) {
@@ -316,7 +313,7 @@ public class ModelTextureBakery {
         glBindFramebuffer(GL_FRAMEBUFFER, this.capture.framebuffer.id);
         glClearDepth(1);
         glClear(GL_DEPTH_BUFFER_BIT);
-        if (layer == RenderLayer.getTranslucent()) {
+        if (layer == RenderType.translucent()) {
             //reset the blend func
             GL14.glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         }
@@ -338,14 +335,14 @@ public class ModelTextureBakery {
     }
 
     private static void addView(int i, float pitch, float yaw, float rotation, int flip) {
-        var stack = new MatrixStack();
+        var stack = new PoseStack();
         stack.translate(0.5f,0.5f,0.5f);
-        stack.multiply(makeQuatFromAxisExact(new Vector3f(0,0,1), rotation));
-        stack.multiply(makeQuatFromAxisExact(new Vector3f(1,0,0), pitch));
-        stack.multiply(makeQuatFromAxisExact(new Vector3f(0,1,0), yaw));
-        stack.multiplyPositionMatrix(new Matrix4f().scale(1-2*(flip&1), 1-(flip&2), 1-((flip>>1)&2)));
+        stack.mulPose(makeQuatFromAxisExact(new Vector3f(0,0,1), rotation));
+        stack.mulPose(makeQuatFromAxisExact(new Vector3f(1,0,0), pitch));
+        stack.mulPose(makeQuatFromAxisExact(new Vector3f(0,1,0), yaw));
+        stack.mulPose(new Matrix4f().scale(1-2*(flip&1), 1-(flip&2), 1-((flip>>1)&2)));
         stack.translate(-0.5f,-0.5f,-0.5f);
-        VIEWS[i] = new Matrix4f(stack.peek().getPositionMatrix());
+        VIEWS[i] = new Matrix4f(stack.last().pose());
     }
 
     private static Quaternionf makeQuatFromAxisExact(Vector3f vec, float angle) {

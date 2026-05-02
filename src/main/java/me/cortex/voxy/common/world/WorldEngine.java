@@ -65,22 +65,22 @@ public class WorldEngine {
     }
 
     public WorldSection acquireIfExists(int lvl, int x, int y, int z) {
-        if (!this.isLive) throw new IllegalStateException("World is not live");
+        if (!this.isLive) throw new IllegalStateException("Level is not live");
         return this.sectionTracker.acquire(lvl, x, y, z, true);
     }
 
     public WorldSection acquire(int lvl, int x, int y, int z) {
-        if (!this.isLive) throw new IllegalStateException("World is not live");
+        if (!this.isLive) throw new IllegalStateException("Level is not live");
         return this.sectionTracker.acquire(lvl, x, y, z, false);
     }
 
     public WorldSection acquire(long pos) {
-        if (!this.isLive) throw new IllegalStateException("World is not live");
+        if (!this.isLive) throw new IllegalStateException("Level is not live");
         return this.sectionTracker.acquire(pos, false);
     }
 
     public WorldSection acquireIfExists(long pos) {
-        if (!this.isLive) throw new IllegalStateException("World is not live");
+        if (!this.isLive) throw new IllegalStateException("Level is not live");
         return this.sectionTracker.acquire(pos, true);
     }
 
@@ -117,7 +117,7 @@ public class WorldEngine {
     }
 
     public void markDirty(WorldSection section, int changeState) {
-        if (!this.isLive) throw new IllegalStateException("World is not live");
+        if (!this.isLive) throw new IllegalStateException("Level is not live");
         if (section.tracker != this.sectionTracker) {
             throw new IllegalStateException("Section is not from here");
         }

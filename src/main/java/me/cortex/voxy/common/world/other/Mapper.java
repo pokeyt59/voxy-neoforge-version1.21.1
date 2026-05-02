@@ -3,19 +3,19 @@ package me.cortex.voxy.common.world.other;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.config.IMappingStorage;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.LeavesBlock;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LeavesBlock;
+import net.minecraft.client.Minecraft;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.nbt.NbtSizeTracker;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.Pair;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.biome.Biome;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.core.Holder;
+import com.mojang.datafixers.util.Pair;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.biome.Biome;
 import org.lwjgl.system.MemoryUtil;
 
 import java.io.ByteArrayInputStream;
@@ -55,7 +55,7 @@ public class Mapper {
     public Mapper(IMappingStorage storage) {
         this.storage = storage;
         //Insert air since its a special entry (index 0)
-        var airEntry = new StateEntry(0, Blocks.AIR.getDefaultState());
+        var airEntry = new StateEntry(0, Blocks.AIR.defaultBlockState());
         this.block2stateEntry.put(airEntry.state, airEntry);
         this.blockId2stateEntry.add(airEntry);
 
@@ -134,7 +134,7 @@ public class Mapper {
             var rand = new Random();
             for (var error : sentryErrors) {
                 while (true) {
-                    var state = new StateEntry(error.getRight(), Block.STATE_IDS.get(rand.nextInt(Block.STATE_IDS.size() - 1)));
+                    var state = new StateEntry(error.getSecond(), Block.BLOCK_STATE_REGISTRY.byId(rand.nextInt(Block.BLOCK_STATE_REGISTRY.size() - 1)));
                     if (this.block2stateEntry.put(state.state, state) == null) {
                         sentries.add(state);
                         break;
@@ -213,7 +213,7 @@ public class Mapper {
 
 
     //TODO:FIXME: IS VERY SLOW NEED TO MAKE IT LOCK FREE, or at minimum use a concurrent map
-    public long getBaseId(byte light, BlockState state, RegistryEntry<Biome> biome) {
+    public long getBaseId(byte light, BlockState state, Holder<Biome> biome) {
         if (state.isAir()) return Byte.toUnsignedLong(light) <<56;//Special case and fast return for air, dont care about the biome
         return composeMappingId(light, this.getIdForBlockState(state), this.getIdForBiome(biome));
     }
@@ -242,8 +242,8 @@ public class Mapper {
         return this.blockId2stateEntry.get(blockId).opacity;
     }
 
-    public int getIdForBiome(RegistryEntry<Biome> biome) {
-        String biomeId = biome.getKey().get().getValue().toString();
+    public int getIdForBiome(Holder<Biome> biome) {
+        String biomeId = biome.unwrapKey().get().location().toString();
         var entry = this.biome2biomeEntry.get(biomeId);
         if (entry == null) {
             entry = this.registerNewBiome(biomeId);
@@ -342,13 +342,13 @@ public class Mapper {
             if (state.getBlock() instanceof LeavesBlock) {
                 this.opacity = 15;
             } else {
-                this.opacity = state.getOpacity(MinecraftClient.getInstance().world, new BlockPos(0,0,0));
+                this.opacity = state.getLightBlock(Minecraft.getInstance().level, new BlockPos(0,0,0));
             }
         }
 
         public byte[] serialize() {
             try {
-                var serialized = new NbtCompound();
+                var serialized = new CompoundTag();
                 serialized.putInt("id", this.id);
                 serialized.put("block_state", BlockState.CODEC.encodeStart(NbtOps.INSTANCE, this.state).result().get());
                 var out = new ByteArrayOutputStream();
@@ -361,14 +361,14 @@ public class Mapper {
 
         public static StateEntry deserialize(int id, byte[] data) {
             try {
-                var compound = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtSizeTracker.ofUnlimitedBytes());
+                var compound = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.unlimitedHeap());
                 if (compound.getInt("id") != id) {
                     throw new IllegalStateException("Encoded id != expected id");
                 }
                 var state = BlockState.CODEC.parse(NbtOps.INSTANCE, compound.getCompound("block_state"));
                 if (state.isError()) {
                     Logger.error("Could not decode blockstate setting to air. id:" + id + " error: " + state.error().get().message());
-                    return new StateEntry(id, Blocks.AIR.getDefaultState());
+                    return new StateEntry(id, Blocks.AIR.defaultBlockState());
                 } else {
                     return new StateEntry(id, state.getOrThrow());
                 }
@@ -389,7 +389,7 @@ public class Mapper {
 
         public byte[] serialize() {
             try {
-                var serialized = new NbtCompound();
+                var serialized = new CompoundTag();
                 serialized.putInt("id", this.id);
                 serialized.putString("biome_id", this.biome);
                 var out = new ByteArrayOutputStream();
@@ -402,7 +402,7 @@ public class Mapper {
 
         public static BiomeEntry deserialize(int id, byte[] data) {
             try {
-                var compound = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtSizeTracker.ofUnlimitedBytes());
+                var compound = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.unlimitedHeap());
                 if (compound.getInt("id") != id) {
                     throw new IllegalStateException("Encoded id != expected id");
                 }

@@ -4,9 +4,9 @@ package me.cortex.voxy.client.core.model;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.world.other.Mapper;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -38,8 +38,8 @@ public class ModelBakerySubsystem {
         //Upload all biomes
         while (!this.biomeQueue.isEmpty()) {
             var biome = this.biomeQueue.poll();
-            var biomeReg = MinecraftClient.getInstance().world.getRegistryManager().get(RegistryKeys.BIOME);
-            this.factory.addBiome(biome.id, biomeReg.get(Identifier.of(biome.biome)));
+            var biomeReg = Minecraft.getInstance().level.registryAccess().registryOrThrow(Registries.BIOME);
+            this.factory.addBiome(biome.id, biomeReg.get(ResourceLocation.parse(biome.biome)));
         }
 
 

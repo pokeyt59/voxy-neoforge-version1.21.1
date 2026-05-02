@@ -5,7 +5,7 @@ import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import me.cortex.voxy.common.Logger;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.ModList;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -95,8 +95,21 @@ public class Serialization {
         Map<Class<?>, GsonConfigSerialization<?>> serializers = new HashMap<>();
 
         Set<String> clazzs = new LinkedHashSet<>();
-        var path = FabricLoader.getInstance().getModContainer("voxy").get().getRootPaths().get(0);
-        clazzs.addAll(collectAllClasses(path, BASE_SEARCH_PACKAGE));
+        ModList.get().getModContainerById("voxy").ifPresent(container -> {
+            var modFilePath = container.getModInfo().getOwningFile().getFile().getFilePath();
+            try {
+                Path rootPath;
+                if (java.nio.file.Files.isDirectory(modFilePath)) {
+                    rootPath = modFilePath; // exploded directory in dev environment
+                } else {
+                    var fs = java.nio.file.FileSystems.newFileSystem(modFilePath, (ClassLoader) null);
+                    rootPath = fs.getPath("/");
+                }
+                clazzs.addAll(collectAllClasses(rootPath, BASE_SEARCH_PACKAGE));
+            } catch (IOException e) {
+                Logger.error("Failed to open mod file for class scanning", e);
+            }
+        });
         clazzs.addAll(collectAllClasses(BASE_SEARCH_PACKAGE));
         int count = 0;
         outer:

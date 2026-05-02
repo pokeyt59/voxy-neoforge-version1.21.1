@@ -9,16 +9,17 @@ import me.cortex.voxy.common.voxelization.WorldConversionFactory;
 import me.cortex.voxy.common.world.WorldEngine;
 import me.cortex.voxy.common.world.WorldUpdater;
 import me.cortex.voxy.common.world.other.Mapper;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.Identifier;
-import net.minecraft.world.World;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.BiomeKeys;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.core.Holder;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.Biomes;
 import org.apache.commons.io.IOUtils;
 import org.tukaani.xz.BasicArrayCache;
 import org.tukaani.xz.ResettableArrayCache;
@@ -44,10 +45,10 @@ public class DHImporter implements IDataImporter {
     private final Connection db;
     private final WorldEngine engine;
     private final ServiceSlice threadPool;
-    private final World world;
+    private final Level world;
     private final int bottomOfWorld;
     private final int worldHeightSections;
-    private final RegistryEntry.Reference<Biome> defaultBiome;
+    private final Holder.Reference<Biome> defaultBiome;
     private final Registry<Biome> biomeRegistry;
     private final Registry<Block> blockRegistry;
     private Thread runner;
@@ -68,14 +69,14 @@ public class DHImporter implements IDataImporter {
         }
     }
 
-    public DHImporter(File file, WorldEngine worldEngine, World mcWorld, ServiceThreadPool servicePool, BooleanSupplier rateLimiter) {
+    public DHImporter(File file, WorldEngine worldEngine, Level mcWorld, ServiceThreadPool servicePool, BooleanSupplier rateLimiter) {
         this.engine = worldEngine;
         this.world = mcWorld;
-        this.biomeRegistry = mcWorld.getRegistryManager().get(RegistryKeys.BIOME);
-        this.defaultBiome = this.biomeRegistry.getEntry(BiomeKeys.PLAINS).get();
-        this.blockRegistry = mcWorld.getRegistryManager().get(RegistryKeys.BLOCK);
+        this.biomeRegistry = mcWorld.registryAccess().registryOrThrow(Registries.BIOME);
+        this.defaultBiome = this.biomeRegistry.getHolder(Biomes.PLAINS).get();
+        this.blockRegistry = mcWorld.registryAccess().registryOrThrow(Registries.BLOCK);
 
-        this.bottomOfWorld = mcWorld.getBottomY();
+        this.bottomOfWorld = mcWorld.getMinBuildHeight();
         int worldHeight = mcWorld.getHeight();
         this.worldHeightSections = (worldHeight+15)/16;
 
@@ -179,8 +180,8 @@ public class DHImporter implements IDataImporter {
         StringBuilder b = new StringBuilder();
         for (var prop : props) {
             String val = "NULL";
-            if (state.contains(prop)) {
-                val = state.get(prop).toString();
+            if (state.hasProperty(prop)) {
+                val = state.getValue(prop).toString();
             }
             b.append("{").append(prop.getName()).append(":").append(val).append("}");
         }
@@ -205,8 +206,8 @@ public class DHImporter implements IDataImporter {
             if (idx == -1)
                 throw new IllegalStateException();
             {
-                var biomeRes = Identifier.of(encEntry.substring(0, idx));
-                var biome = this.biomeRegistry.getEntry(biomeRes).orElse(this.defaultBiome);
+                var biomeRes = ResourceLocation.parse(encEntry.substring(0, idx));
+                var biome = this.biomeRegistry.getHolder(biomeRes).orElse(this.defaultBiome);
                 biomeId = this.engine.getMapper().getIdForBiome(biome);
             }
             {
@@ -219,12 +220,12 @@ public class DHImporter implements IDataImporter {
                     if (sIdx != -1) {
                         bStateStr = encEntry.substring(sIdx + STATE_STRING_SEPARATOR.length());
                     }
-                    var bId = Identifier.of(encEntry.substring(b, sIdx != -1 ? sIdx : encEntry.length()));
-                    var block = this.blockRegistry.getEntry(bId).orElse(Blocks.AIR.getRegistryEntry()).value();
-                    var state = block.getDefaultState();
+                    var bId = ResourceLocation.parse(encEntry.substring(b, sIdx != -1 ? sIdx : encEntry.length()));
+                    var block = this.blockRegistry.getOptional(bId).orElse(Blocks.AIR);
+                    var state = block.defaultBlockState();
                     if (bStateStr != null && block != Blocks.AIR) {
                         boolean found = false;
-                        for (BlockState bState : block.getStateManager().getStates()) {
+                        for (BlockState bState : block.getStateDefinition().getPossibleStates()) {
                             if (getSerialBlockState(bState).equals(bStateStr)) {
                                 state = bState;
                                 found = true;

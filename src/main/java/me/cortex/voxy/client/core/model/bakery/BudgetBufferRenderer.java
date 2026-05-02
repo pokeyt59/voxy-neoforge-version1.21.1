@@ -6,9 +6,9 @@ import me.cortex.voxy.client.core.gl.GlVertexArray;
 import me.cortex.voxy.client.core.gl.shader.Shader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
-import net.minecraft.client.render.BuiltBuffer;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.texture.AbstractTexture;
+import com.mojang.blaze3d.vertex.MeshData;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import net.minecraft.client.renderer.texture.AbstractTexture;
 
 import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryUtil;
@@ -35,13 +35,10 @@ public class BudgetBufferRenderer {
     public static void init(){}
     private static final GlBuffer indexBuffer;
     static {
-        var i = RenderSystem.getSequentialBuffer(VertexFormat.DrawMode.QUADS);
-        i.bindAndGrow(4096*3*2);
-        int id = i.id;
+        var i = RenderSystem.getSequentialBuffer(VertexFormat.Mode.QUADS);
+        i.bind(4096*3*2);
+        int id = i.name;
 
-        if (i.getIndexType() != VertexFormat.IndexType.SHORT) {
-            throw new IllegalStateException();
-        }
         indexBuffer = new GlBuffer(3*2*2*4096);
         glCopyNamedBufferSubData(id, indexBuffer.id, 0, 0, 3*2*2*4096);
     }
@@ -55,18 +52,18 @@ public class BudgetBufferRenderer {
 
     private static GlBuffer immediateBuffer;
     private static int quadCount;
-    public static void drawFast(BuiltBuffer buffer, AbstractTexture tex, Matrix4f matrix) {
-        if (buffer.getDrawParameters().mode() != VertexFormat.DrawMode.QUADS) {
+    public static void drawFast(MeshData buffer, AbstractTexture tex, Matrix4f matrix) {
+        if (buffer.drawState().mode() != VertexFormat.Mode.QUADS) {
             throw new IllegalStateException("Fast only supports quads");
         }
 
-        var buff = buffer.getBuffer();
+        var buff = buffer.vertexBuffer();
         int size = buff.remaining();
         if (size%STRIDE != 0) throw new IllegalStateException();
         size /= STRIDE;
         if (size%4 != 0) throw new IllegalStateException();
         size /= 4;
-        setup(MemoryUtil.memAddress(buff), size, tex.getGlId());
+        setup(MemoryUtil.memAddress(buff), size, tex.getId());
         buffer.close();
 
         render(matrix);

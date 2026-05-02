@@ -14,8 +14,8 @@ import me.cortex.voxy.common.config.storage.rocksdb.RocksDBStorageBackend;
 import me.cortex.voxy.commonImpl.ImportManager;
 import me.cortex.voxy.commonImpl.VoxyInstance;
 import me.cortex.voxy.commonImpl.WorldIdentifier;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -124,26 +124,20 @@ public class VoxyClientInstance extends VoxyInstance {
     }
 
     private static Path getBasePath() {
-        Path basePath = MinecraftClient.getInstance().runDirectory.toPath().resolve(".voxy").resolve("saves");
-        var iserver = MinecraftClient.getInstance().getServer();
+        Path basePath = Minecraft.getInstance().gameDirectory.toPath().resolve(".voxy").resolve("saves");
+        var iserver = Minecraft.getInstance().getSingleplayerServer();
         if (iserver != null) {
-            basePath = iserver.getSavePath(WorldSavePath.ROOT).resolve("voxy");
+            basePath = iserver.getWorldPath(LevelResource.ROOT).resolve("voxy");
         } else {
-            var netHandle = MinecraftClient.getInstance().interactionManager;
-            if (netHandle == null) {
-                Logger.error("Network handle null");
+            var info = Minecraft.getInstance().getCurrentServer();
+            if (info == null) {
+                Logger.error("Server info null");
                 basePath = basePath.resolve("UNKNOWN");
             } else {
-                var info = netHandle.networkHandler.getServerInfo();
-                if (info == null) {
-                    Logger.error("Server info null");
-                    basePath = basePath.resolve("UNKNOWN");
+                if (info.isRealm()) {
+                    basePath = basePath.resolve("realms");
                 } else {
-                    if (info.isRealm()) {
-                        basePath = basePath.resolve("realms");
-                    } else {
-                        basePath = basePath.resolve(info.address.replace(":", "_"));
-                    }
+                    basePath = basePath.resolve(info.ip.replace(":", "_"));
                 }
             }
         }

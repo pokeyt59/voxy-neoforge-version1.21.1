@@ -3,19 +3,19 @@ package me.cortex.voxy.client.mixin.minecraft;
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
 import me.cortex.voxy.common.world.service.VoxelIngestService;
 import me.cortex.voxy.commonImpl.VoxyCommon;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.client.world.ClientChunkManager;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.util.profiler.Profiler;
-import net.minecraft.world.LightType;
-import net.minecraft.world.World;
-import net.minecraft.world.dimension.DimensionType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.multiplayer.ClientChunkCache;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.core.Holder;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
+import net.minecraft.util.profiling.ProfilerFiller;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.dimension.DimensionType;
 
 import java.util.function.Supplier;
 
@@ -27,33 +27,33 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(ClientWorld.class)
+@Mixin(ClientLevel.class)
 public abstract class MixinClientWorld {
 
     @Unique
     private int bottomSectionY;
 
-    @Shadow @Final public WorldRenderer worldRenderer;
+    @Shadow @Final public LevelRenderer levelRenderer;
 
-    @Shadow public abstract ClientChunkManager getChunkManager();
+    @Shadow public abstract ClientChunkCache getChunkSource();
 
     @Inject(method = "<init>", at = @At("TAIL"))
     private void voxy$getBottom(
-            ClientPlayNetworkHandler networkHandler,
-            ClientWorld.Properties properties,
-            RegistryKey<World> registryRef,
-            RegistryEntry<DimensionType> dimensionType,
+            ClientPacketListener networkHandler,
+            ClientLevel.ClientLevelData properties,
+            ResourceKey<Level> registryRef,
+            Holder<DimensionType> dimensionType,
             int loadDistance,
             int simulationDistance,
-            Supplier<Profiler> profiler,
-            WorldRenderer worldRenderer,
+            Supplier<ProfilerFiller> profiler,
+            LevelRenderer levelRenderer,
             boolean debugWorld,
             long seed,
             CallbackInfo cir) {
-        this.bottomSectionY = ((World)(Object)this).getBottomY()>>4;
+        this.bottomSectionY = ((Level)(Object)this).getMinSection();
     }
 
-    @Inject(method = "scheduleBlockRerenderIfNeeded", at = @At("TAIL"))
+    @Inject(method = "setBlocksDirty", at = @At("TAIL"))
     private void voxy$injectIngestOnStateChange(BlockPos pos, BlockState old, BlockState updated, CallbackInfo cir) {
         if (old == updated) return;
 
@@ -61,7 +61,7 @@ public abstract class MixinClientWorld {
         // block removal
         if (!updated.isAir()) return;
 
-        var system = ((IGetVoxyRenderSystem)(this.worldRenderer)).getVoxyRenderSystem();
+        var system = ((IGetVoxyRenderSystem)(this.levelRenderer)).getVoxyRenderSystem();
         if (system == null) {
             return;
         }
@@ -70,17 +70,17 @@ public abstract class MixinClientWorld {
         int y = pos.getY()&15;
         int z = pos.getZ()&15;
         if (x == 0 || x==15 || y==0 || y==15 || z==0||z==15) {//Update if there is a statechange on the boarder
-            var world = (World)(Object)this;
+            var world = (Level)(Object)this;
 
-            var csp = ChunkSectionPos.from(pos);
+            var csp = SectionPos.of(pos);
 
-            var section = world.getChunk(pos).getSection(csp.getSectionY()-this.bottomSectionY);
-            var lp = world.getLightingProvider();
+            var section = world.getChunk(pos).getSection(csp.y()-this.bottomSectionY);
+            var lp = world.getLightEngine();
 
-            var blp = lp.get(LightType.BLOCK).getLightSection(csp);
-            var slp = lp.get(LightType.SKY).getLightSection(csp);
+            var blp = lp.getLayerListener(LightLayer.BLOCK).getDataLayerData(csp);
+            var slp = lp.getLayerListener(LightLayer.SKY).getDataLayerData(csp);
 
-            VoxelIngestService.rawIngest(system.getEngine(), section, csp.getSectionX(), csp.getSectionY(), csp.getSectionZ(), blp==null?null:blp.copy(), slp==null?null:slp.copy());
+            VoxelIngestService.rawIngest(system.getEngine(), section, csp.x(), csp.y(), csp.z(), blp==null?null:blp.copy(), slp==null?null:slp.copy());
         }
     }
 }

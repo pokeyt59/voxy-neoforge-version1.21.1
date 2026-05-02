@@ -18,7 +18,7 @@ public class WorldUpdater {
             section.setPosition(section.x-(sector<<10), section.y+16+(256-32-sector*30), section.z);//Note sector size mult is 30 because the top chunk is replicated (and so is bottom chunk)
         }
 
-        if (!into.isLive) throw new IllegalStateException("World is not live");
+        if (!into.isLive) throw new IllegalStateException("Level is not live");
         boolean shouldCheckEmptiness = false;
         WorldSection previousSection = null;
         final var vdat = section.section;

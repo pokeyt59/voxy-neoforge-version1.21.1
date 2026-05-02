@@ -11,7 +11,7 @@ import me.cortex.voxy.client.core.rendering.hierachical.HierarchicalOcclusionTra
 import me.cortex.voxy.client.core.rendering.hierachical.NodeCleaner;
 import me.cortex.voxy.client.core.rendering.post.FullscreenBlit;
 import me.cortex.voxy.client.core.rendering.util.DepthFramebuffer;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryStack;
 

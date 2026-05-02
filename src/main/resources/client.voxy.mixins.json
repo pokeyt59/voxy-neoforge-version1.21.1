@@ -3,8 +3,6 @@
   "package": "me.cortex.voxy.client.mixin",
   "compatibilityLevel": "JAVA_17",
   "client": [
-    "flashback.MixinFlashbackMeta",
-    "flashback.MixinFlashbackRecorder",
     "iris.MixinWorldRenderer",
     "iris.MixinPackRenderTargetDirectives",
     "iris.CustomUniformsAccessor",
@@ -28,7 +26,6 @@
     // "minecraft.MixinThreadExecutor",
     "minecraft.MixinWindow",
     "minecraft.MixinWorldRenderer",
-    "nvidium.MixinRenderPipeline",
     "sodium.AccessorChunkTracker",
     "sodium.MixinDefaultChunkRenderer",
     "sodium.MixinRenderSectionManager",
