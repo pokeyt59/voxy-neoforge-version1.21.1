@@ -1,0 +1,45 @@
+> Task :cacheVersionManifest1.21.1 UP-TO-DATE
+> Task :cacheVersionExecutableClient1.21.1 UP-TO-DATE
+> Task :cacheVersionExecutableServer1.21.1 UP-TO-DATE
+> Task :cacheVersionMappingsClient1.21.1 UP-TO-DATE
+> Task :cacheVersionMappingsServer1.21.1 UP-TO-DATE
+> Task :neoFormListLibraries UP-TO-DATE
+> Task :neoFormStripClient UP-TO-DATE
+> Task :neoFormExtractServer UP-TO-DATE
+> Task :neoFormStripServer UP-TO-DATE
+> Task :neoFormMerge UP-TO-DATE
+> Task :neoFormMergeMappings UP-TO-DATE
+> Task :neoFormRename UP-TO-DATE
+> Task :neoFormDecompile UP-TO-DATE
+> Task :neoFormApplyForgesAccessTransformer UP-TO-DATE
+> Task :neoFormApplyUserAccessTransformer UP-TO-DATE
+> Task :neoFormInject UP-TO-DATE
+> Task :neoFormPatch UP-TO-DATE
+> Task :neoFormPatchUserDev UP-TO-DATE
+> Task :neoFormApplyOfficialMappings UP-TO-DATE
+> Task :neoFormApplyParchment UP-TO-DATE
+> Task :neoFormUnzipSources UP-TO-DATE
+> Task :create1.21.1ClientExtraJar UP-TO-DATE
+> Task :selectRawArtifactNg_dummy_ng.net.minecraft_client_1.21.1_client-extra UP-TO-DATE
+> Task :neoFormRecompile UP-TO-DATE
+> Task :neoFormPackRecomp UP-TO-DATE
+> Task :supplyRawJarForneoFormJoined1.21.1-20240808.144430 UP-TO-DATE
+> Task :selectRawArtifactNg_dummy_ng.net.neoforged_neoforge_21.1.172 UP-TO-DATE
+> Task :compileJava UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :jar
+> Task :jarJar
+> Task :assemble
+> Task :compileTestJava NO-SOURCE
+> Task :neoFormJoined1.21.1-20240808.144430DownloadAssets
+> Task :neoFormJoined1.21.1-20240808.144430ExtractNatives
+> Task :processTestResources NO-SOURCE
+> Task :testClasses UP-TO-DATE
+> Task :writeMinecraftClasspathJunit
+> Task :test NO-SOURCE
+> Task :check UP-TO-DATE
+> Task :build
+
+BUILD SUCCESSFUL in 1m 49s
+34 actionable tasks: 5 executed, 29 up-to-date

@@ -1,0 +1,48 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "All-Rights-Reserved"
+
+[[mixins]]
+config = "client.voxy.mixins.json"
+
+[[mixins]]
+config = "common.voxy.mixins.json"
+
+[[mods]]
+modId = "voxy"
+version = "${version}"
+displayName = "Voxy"
+description = "Far distance rendering mod utilising LoDs"
+logoFile = "assets/voxy/icon.png"
+
+# commit hash is injected by processResources at build time
+[modproperties.voxy]
+    commit = "${commit}"
+
+[[dependencies.voxy]]
+    modId = "neoforge"
+    type = "required"
+    versionRange = "[21.1,)"
+    ordering = "NONE"
+    side = "BOTH"
+
+[[dependencies.voxy]]
+    modId = "minecraft"
+    type = "required"
+    versionRange = "[1.21.1,1.21.2)"
+    ordering = "NONE"
+    side = "BOTH"
+
+[[dependencies.voxy]]
+    modId = "sodium"
+    type = "required"
+    versionRange = "[0.6.13,)"
+    ordering = "AFTER"
+    side = "CLIENT"
+
+[[dependencies.voxy]]
+    modId = "iris"
+    type = "optional"
+    versionRange = "[1.8.8,)"
+    ordering = "AFTER"
+    side = "CLIENT"
