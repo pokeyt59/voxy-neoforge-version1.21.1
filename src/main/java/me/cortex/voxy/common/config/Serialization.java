@@ -94,23 +94,28 @@ public class Serialization {
 
         Map<Class<?>, GsonConfigSerialization<?>> serializers = new HashMap<>();
 
+        // Collect all classes in voxy's package via NeoForge's class-graph
+        // scanner. The older NIO walk + classloader-resource fallback don't
+        // work under NeoForge module isolation (getResourceAsStream returns
+        // null → NPE; the NIO walk silently returns nothing for the synthetic
+        // userdev mod-file path). ModFileScanData is the canonical FML API
+        // and works in both dev and production.
         Set<String> clazzs = new LinkedHashSet<>();
         ModList.get().getModContainerById("voxy").ifPresent(container -> {
-            var modFilePath = container.getModInfo().getOwningFile().getFile().getFilePath();
             try {
-                Path rootPath;
-                if (java.nio.file.Files.isDirectory(modFilePath)) {
-                    rootPath = modFilePath; // exploded directory in dev environment
-                } else {
-                    var fs = java.nio.file.FileSystems.newFileSystem(modFilePath, (ClassLoader) null);
-                    rootPath = fs.getPath("/");
+                var scanResult = container.getModInfo().getOwningFile().getFile().getScanResult();
+                if (scanResult != null) {
+                    for (var classData : scanResult.getClasses()) {
+                        var className = classData.clazz().getClassName();
+                        if (className.startsWith(BASE_SEARCH_PACKAGE)) {
+                            clazzs.add(className);
+                        }
+                    }
                 }
-                clazzs.addAll(collectAllClasses(rootPath, BASE_SEARCH_PACKAGE));
-            } catch (IOException e) {
-                Logger.error("Failed to open mod file for class scanning", e);
+            } catch (Exception e) {
+                Logger.error("Failed to scan voxy mod file for classes", e);
             }
         });
-        clazzs.addAll(collectAllClasses(BASE_SEARCH_PACKAGE));
         int count = 0;
         outer:
         for (var clzName : clazzs) {
