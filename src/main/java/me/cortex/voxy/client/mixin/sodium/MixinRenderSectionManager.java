@@ -114,7 +114,12 @@ public class MixinRenderSectionManager {
                 this.cachedChunkPos = key;
                 this.cachedChunkStatus = tracker.getOrDefault(key, 0);
             }
-            if (this.cachedChunkStatus == 3) {//If this chunk still has surrounding chunks
+            // Was: == 3 (FLAG_HAS_BLOCK_DATA | FLAG_HAS_LIGHT_DATA). Edge chunks at the render
+            // distance ring often have block data but never reach FLAG_HAS_LIGHT_DATA because light
+            // propagation requires the outer neighbor, which never loads — so they got meshed but
+            // never ingested, leaving black voids in the LoD ring. Accept any non-zero status; the
+            // null light copy is already handled below.
+            if (this.cachedChunkStatus != 0) {
                 var section = this.level.getChunk(x,z).getSection(y-this.bottomSectionY);
                 var lp = this.level.getLightEngine();
 
