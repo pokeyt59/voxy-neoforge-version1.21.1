@@ -74,7 +74,9 @@
       "Bash(unzip -p /c/Users/Newpi/.gradle/caches/modules-2/files-2.1/maven.modrinth/sodium/mc1.21.1-0.6.13-neoforge/38af70fa4dc4b2aaac636e92fdba3bedd5a025e1/sodium-mc1.21.1-0.6.13-neoforge.jar net/caffeinemc/mods/sodium/client/render/chunk/RenderSectionManager.class)",
       "Bash(\"C:/Program Files/Java/jdk-21/bin/javap\" -p /tmp/RSM.class)",
       "Bash(unzip -p /c/Users/Newpi/.gradle/caches/modules-2/files-2.1/maven.modrinth/sodium/mc1.21.1-0.6.13-neoforge/38af70fa4dc4b2aaac636e92fdba3bedd5a025e1/sodium-mc1.21.1-0.6.13-neoforge.jar net/caffeinemc/mods/sodium/client/gui/SodiumOptionsGUI.class)",
-      "Bash(\"C:/Program Files/Java/jdk-21/bin/javap\" -p /tmp/SOG.class)"
+      "Bash(\"C:/Program Files/Java/jdk-21/bin/javap\" -p /tmp/SOG.class)",
+      "Bash(./gradlew dependencyInsight --configuration runtimeClasspath --dependency org.lz4 --no-daemon)",
+      "Bash(grep *)"
     ]
   }
 }

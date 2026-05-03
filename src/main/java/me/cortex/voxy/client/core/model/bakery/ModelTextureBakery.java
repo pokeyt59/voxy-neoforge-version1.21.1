@@ -98,6 +98,14 @@ public class ModelTextureBakery {
                 return null;
             }
 
+            // Bakery only captures fluid texture quads — lighting is irrelevant.
+            // 1.21.1's default BlockAndTintGetter.getBrightness dereferences
+            // getLightEngine() unconditionally, so override to bypass the null.
+            @Override
+            public int getBrightness(LightLayer lightLayer, BlockPos pos) {
+                return 15;
+            }
+
             @Override
             public int getBlockTint(BlockPos pos, ColorResolver colorResolver) {
                 return 0;

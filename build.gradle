@@ -97,6 +97,24 @@ def gitCommitHash = { ->
     }
 }
 
+configurations {
+    bundledLibs {
+        canBeResolved = true
+        canBeConsumed = false
+        transitive = false   // bundle exactly the artifacts we list
+    }
+    lwjglNatives {
+        canBeResolved = true
+        canBeConsumed = false
+        // Without `transitive = false`, gradle pulls lwjgl-core natives as a
+        // transitive of lwjgl-zstd / lwjgl-lmdb. Their jars contain
+        // `org.lwjgl.system.linux` classes — extracting those into voxy's
+        // resources makes voxy's module export that package, conflicting with
+        // the `org.lwjgl` module already on the boot classpath.
+        transitive = false
+    }
+}
+
 processResources {
     def hash = gitCommitHash()
     def ver  = project.version
@@ -104,15 +122,46 @@ processResources {
     filesMatching("META-INF/neoforge.mods.toml") {
         expand "version": ver, "commit": hash
     }
+
+    // Stage bundled libs (rocksdbjni, jedis, lz4, …) into META-INF/jarjar/ so
+    // both dev runs (FML userdev locator) and the main production jar see them.
+    // NGP's `jarJar` config alone only bundles into the `-all` classifier jar
+    // and leaves dev runtime blind to these libs — see stageBundledLibs below.
+    dependsOn 'stageBundledLibs', 'generateBundledLibsMetadata'
+    from(layout.buildDirectory.dir('bundledLibsStage'))
+
+    // Extract LWJGL native libs (lwjgl_zstd.dll, lwjgl_lmdb.dll, …) at their
+    // standard `<os>/<arch>/org/lwjgl/...` paths inside voxy's resources so
+    // the bundled lwjgl-zstd / lwjgl-lmdb modules find their .dll/.so via
+    // classpath scan. Production's `jar { from zipTree(lwjglNatives) }` block
+    // does the same merge for the shipped jar; this line gives dev runs the
+    // same layout. Without this: UnsatisfiedLinkError at first compression op.
+    //
+    // Wrapped in a Closure (`{ ... }`) so the configuration is resolved at
+    // task-execution time, not at script-config time — dependencies are still
+    // being declared further down the script when this `from` is parsed.
+    from({ configurations.lwjglNatives.collect { zipTree(it) } }) {
+        exclude 'META-INF/MANIFEST.MF'
+        exclude 'META-INF/INDEX.LIST'
+        exclude 'META-INF/*.SF'
+        exclude 'META-INF/*.DSA'
+        exclude 'META-INF/*.RSA'
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
-// ── jarJar (jar-in-jar bundling) ────────────────────────────────────────────
-// jarJar is enabled by default in NGP 7.x — no `jarJar.enable()` needed.
+// ── jarJar / bundled libraries ──────────────────────────────────────────────
+// We bundle pure-Java libs ourselves (instead of relying on NGP's jarJar
+// config) so dev runs can resolve them. NeoForge's userdev locator scans the
+// mod source's META-INF/jarjar/ for bundled deps — no `META-INF/jarjar/` =
+// no rocksdb visible to voxy's mod module, even with `implementation`.
 
 // TODO: filter RocksDB natives down to win/linux x64 — see original Loom
 // implementation. Skipped for now to keep the build green.
 
 // ── dependencies ────────────────────────────────────────────────────────────
+// (`bundledLibs` and `lwjglNatives` configurations are declared above
+// processResources so its `from(configurations.lwjglNatives...)` resolves.)
 
 dependencies {
     implementation "net.neoforged:neoforge:${project.neo_version}"
@@ -156,35 +205,65 @@ dependencies {
         }
     }
 
-    // ── Bundled libraries (jarJar) ──────────────────────────────────────────
-    // NeoForge's jarJar does not accept classifier dependencies (e.g. natives).
-    // Strategy:
-    //   - Pure-Java libs: declare via `jarJar` so they get bundled in the mod jar.
-    //   - LWJGL native jars: declared as `runtimeOnly` for dev; bundled into the
-    //     mod jar via the bundleNatives copy-into-jar logic below.
+    // ── Bundled libraries ───────────────────────────────────────────────────
+    // Pure-Java libs needed at runtime by voxy. Declared in two configs:
+    //   - `compileOnly`: compile classpath only (NOT runtime — see below)
+    //   - `bundledLibs`: physically copied into META-INF/jarjar/ in the
+    //                    resources output so FML treats them as bundled
+    //                    (works in both dev and production)
+    // We deliberately do NOT use `implementation` here. `implementation` puts
+    // these libs on the gradle runtime classpath, which NeoForge loads as
+    // automatic modules in the BOOT layer. Voxy then ALSO bundles them as
+    // jar-in-jar — same module name in two layers → JPMS resolution failure
+    // ("Module X reads more than one module named …"). Compile-time view
+    // comes from `compileOnly`; runtime comes from META-INF/jarjar/ only.
+    // LWJGL native jars stay on `runtimeOnly` for dev; production native
+    // bundling is handled by the `jar { from(...) }` block further below.
 
     def lwjglVersion = "3.3.3"
 
-    // LWJGL extras (lmdb + zstd are NOT bundled with vanilla Minecraft)
-    jarJar(implementation("org.lwjgl:lwjgl-lmdb:${lwjglVersion}"))
-    jarJar(implementation("org.lwjgl:lwjgl-zstd:${lwjglVersion}"))
+    def bundledArtifacts = [
+        "org.lwjgl:lwjgl-lmdb:${lwjglVersion}",
+        "org.lwjgl:lwjgl-zstd:${lwjglVersion}",
+        'redis.clients:jedis:5.1.0',
+        'org.rocksdb:rocksdbjni:10.2.1',
+        'org.apache.commons:commons-pool2:2.12.0',
+        'org.tukaani:xz:1.10',
+    ]
+    bundledArtifacts.each { artifact ->
+        compileOnly(artifact)
+        bundledLibs(artifact)
+    }
 
-    // Natives — runtime-only for the dev environment; production bundling
-    // is handled by the `jar { from(...) }` block at the bottom of this file.
+    // lz4-java is a transitive of NeoForge itself — already loaded as an
+    // automatic module at runtime. Bundling it in voxy's META-INF/jarjar/
+    // produces "Module X reads more than one module named org.lz4.java" when
+    // iris's bundled glsl-transformer/jcpp resolve their `requires
+    // org.lz4.java`. Use NeoForge's copy at runtime; declare compileOnly so
+    // voxy's source can still reference the API.
+    compileOnly('org.lz4:lz4-java:1.8.0')
+
+    // LWJGL natives — runtime-only for dev; production bundling is the
+    // `jar { from(configurations.lwjglNatives.collect { ... }) }` block.
     runtimeOnly "org.lwjgl:lwjgl-lmdb:${lwjglVersion}:natives-windows"
     runtimeOnly "org.lwjgl:lwjgl-zstd:${lwjglVersion}:natives-windows"
     runtimeOnly "org.lwjgl:lwjgl-lmdb:${lwjglVersion}:natives-linux"
     runtimeOnly "org.lwjgl:lwjgl-zstd:${lwjglVersion}:natives-linux"
 
-    jarJar(implementation('redis.clients:jedis:5.1.0'))
-    jarJar(implementation('org.rocksdb:rocksdbjni:10.2.1'))
-    jarJar(implementation('org.apache.commons:commons-pool2:2.12.0'))
-    jarJar(implementation('org.lz4:lz4-java:1.8.0'))
-    jarJar(implementation('org.tukaani:xz:1.10'))
+    // Same natives, but on the `lwjglNatives` configuration so processResources
+    // and the production jar task can extract them at standard paths into the
+    // mod's resources. processResources resolves this configuration at config
+    // time, so the deps must be added here (in the same `dependencies` block,
+    // before the processResources reference fires) rather than in a later block.
+    lwjglNatives "org.lwjgl:lwjgl-lmdb:${lwjglVersion}:natives-windows"
+    lwjglNatives "org.lwjgl:lwjgl-zstd:${lwjglVersion}:natives-windows"
+    lwjglNatives "org.lwjgl:lwjgl-lmdb:${lwjglVersion}:natives-linux"
+    lwjglNatives "org.lwjgl:lwjgl-zstd:${lwjglVersion}:natives-linux"
 
-    // SQLite: bundle for production, runtime-only for dev
+    // SQLite: bundle for production, runtime-only for dev.
     if (isInGHA) {
-        jarJar(implementation('org.xerial:sqlite-jdbc:3.49.1.0'))
+        compileOnly('org.xerial:sqlite-jdbc:3.49.1.0')
+        bundledLibs('org.xerial:sqlite-jdbc:3.49.1.0')
     } else {
         runtimeOnly('org.xerial:sqlite-jdbc:3.49.1.0')
     }
@@ -193,19 +272,39 @@ dependencies {
 // ── LWJGL native bundling ───────────────────────────────────────────────────
 // Pull the native jars out of the runtime classpath and merge their contents
 // into the final mod jar so end users don't need to install them separately.
+// (The `lwjglNatives` configuration is declared up top alongside `bundledLibs`
+// so processResources can extract the natives into resources/main.)
 
-configurations {
-    lwjglNatives {
-        canBeResolved = true
-        canBeConsumed = false
-    }
+// ── Tasks: stage bundled libs into META-INF/jarjar/ ──────────────────────────
+// Resolve every artifact in the `bundledLibs` configuration and write them
+// (plus a metadata.json that mirrors NGP's format) into a staging dir, which
+// processResources then merges into build/resources/main. End result: the mod
+// source's META-INF/jarjar/ has metadata.json + lib jars, exactly the layout
+// FML's userdev locator expects.
+
+tasks.register('stageBundledLibs', Copy) {
+    from configurations.bundledLibs
+    into layout.buildDirectory.dir('bundledLibsStage/META-INF/jarjar')
 }
 
-dependencies {
-    lwjglNatives "org.lwjgl:lwjgl-lmdb:3.3.3:natives-windows"
-    lwjglNatives "org.lwjgl:lwjgl-zstd:3.3.3:natives-windows"
-    lwjglNatives "org.lwjgl:lwjgl-lmdb:3.3.3:natives-linux"
-    lwjglNatives "org.lwjgl:lwjgl-zstd:3.3.3:natives-linux"
+tasks.register('generateBundledLibsMetadata') {
+    def metadataFile = layout.buildDirectory.file('bundledLibsStage/META-INF/jarjar/metadata.json')
+    outputs.file(metadataFile)
+    inputs.files(configurations.bundledLibs)
+    doLast {
+        def jars = configurations.bundledLibs.resolvedConfiguration.resolvedArtifacts.collect { a ->
+            def id = a.moduleVersion.id
+            [
+                identifier: [group: id.group, artifact: id.name],
+                version: [range: "[${id.version},)", artifactVersion: id.version],
+                path: "META-INF/jarjar/${a.file.name}",
+                isObfuscated: false,
+            ]
+        }
+        def file = metadataFile.get().asFile
+        file.parentFile.mkdirs()
+        file.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([jars: jars]))
+    }
 }
 
 // ── Compilation ──────────────────────────────────────────────────────────────
