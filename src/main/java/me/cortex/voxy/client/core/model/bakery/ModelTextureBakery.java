@@ -78,7 +78,20 @@ public class ModelTextureBakery {
     }
 
 
-    private void bakeFluidState(BlockState state, RenderType layer, int face) {
+    private void bakeFluidState(BlockState inState, RenderType layer, int face) {
+        // Collapse flowing/falling water (and lava) levels to source. Vanilla's
+        // LiquidBlockRenderer renders flowing fluid at a partial column height
+        // determined by the level. The Mapper assigns each level a distinct id,
+        // and Mipper.mip picks one of 8 corners by opacity tie-break (corner
+        // index), so adjacent mip-voxels at coastlines/rivers can land on
+        // different levels — each baked with a different surface height. The
+        // visible artifact is a stair-stepped LoD water surface. At LoD distance
+        // the per-block flow direction is invisible anyway, so unifying all
+        // levels to the source state is the cheapest fix and dedupes through the
+        // model texture cache.
+        final BlockState state = (inState.getBlock() instanceof LiquidBlock liquid)
+                ? liquid.defaultBlockState()
+                : inState;
         {
             //TODO: somehow set the tint flag per quad or something?
             int metadata = getMetaFromLayer(layer);

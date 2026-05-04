@@ -68,11 +68,39 @@ public class VoxelIngestService {
         }
     }
 
+    /**
+     * Detects DataLayers whose backing byte array is allocated but contains only zeros.
+     * DataLayer.isEmpty() returns true only when data==null AND defaultValue==0 — but
+     * vanilla auto-allocates the array on the first set() (DataLayer.getData() line 100,
+     * fills with zeros if defaultValue==0). After that, isEmpty()==false yet every read
+     * returns 0. Sections ingested in that window render pitch-black at LoD. We only do
+     * the linear scan when the layer is non-homogenous (data already allocated), so this
+     * never triggers extra allocation on a previously-uniform layer.
+     */
+    private static boolean isAllocatedAllZero(DataLayer layer) {
+        if (layer.isDefinitelyHomogenous()) return false;
+        byte[] data = layer.getData();
+        for (byte b : data) if (b != 0) return false;
+        return true;
+    }
+
     @NotNull
     private static ILightingSupplier getLightingSupplier(IngestSection task) {
-        ILightingSupplier supplier = (x,y,z) -> (byte) 0;
-        var sla = task.skyLight;
-        var bla = task.blockLight;
+        // Default sky=15, block=0 (byte format: low4=sky, high4=block).
+        // Sections ingested with null or allocated-all-zero light data — ring chunks whose
+        // light propagation never finished, or chunks caught mid-propagation — used to
+        // render pitch-black at LoD (section-sized black blobs on trees, water
+        // tiling/banding, void chunks). Defaulting to sky=15 makes them appear sun-lit,
+        // which is the correct surface appearance for these cases. Lightmap modulation
+        // by time-of-day is applied at render time, so nighttime still dims correctly.
+        // When proper light data later arrives via chunk reload, the section is
+        // re-ingested and overwrites this placeholder.
+        ILightingSupplier supplier = (x,y,z) -> (byte) 15;
+        DataLayer slaRaw = task.skyLight;
+        DataLayer blaRaw = task.blockLight;
+        // Treat allocated-all-zero layers as if absent so the sky=15 default fires.
+        DataLayer sla = (slaRaw != null && isAllocatedAllZero(slaRaw)) ? null : slaRaw;
+        DataLayer bla = (blaRaw != null && isAllocatedAllZero(blaRaw)) ? null : blaRaw;
         boolean sl = sla != null && !sla.isEmpty();
         boolean bl = bla != null && !bla.isEmpty();
         if (sl || bl) {

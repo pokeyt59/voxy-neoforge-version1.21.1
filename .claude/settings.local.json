@@ -85,7 +85,8 @@
       "Bash(cygpath -w /tmp/sodium_extract/net/caffeinemc/mods/sodium/client/render/chunk/map/ChunkTracker.class)",
       "Bash(./gradlew compileJava --no-daemon -q)",
       "Bash(./gradlew compileJava --console=plain)",
-      "Bash(jq --version)"
+      "Bash(jq --version)",
+      "Bash(javap -c -p \"D:\\\\mc\\\\MODEVS\\\\voxy-neoforge-version1.21.1\\\\build\\\\classes/java/main/me/cortex/voxy/common/world/service/VoxelIngestService.class\")"
     ]
   }
 }

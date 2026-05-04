@@ -142,10 +142,25 @@ void main() {
         return;
     }
 
-    //Check the minimum bounding texture and ensure we are greater than it
-    if (gl_FragCoord.z < texelFetch(depthTex, ivec2(gl_FragCoord.xy), 0).r) {
-        discard;
-        return;
+    //Check the minimum bounding texture and ensure we are greater than it.
+    //2x2 max sample closes 1-pixel rasterization gaps along shared edges of
+    //independently-instanced AABB cubes in the depth-bound buffer. Without
+    //this, adjacent sections leave 1-pixel screen-space columns/rows where
+    //the mask stays at the cleared value and LoD bleeds through, producing
+    //hairline diamond/diagonal seams visible especially in open water LoD.
+    //min() against textureSize-1 keeps us in-bounds at screen edges.
+    {
+        ivec2 fc = ivec2(gl_FragCoord.xy);
+        ivec2 sz = textureSize(depthTex, 0) - ivec2(1);
+        float m00 = texelFetch(depthTex, fc, 0).r;
+        float m10 = texelFetch(depthTex, min(fc + ivec2(1, 0), sz), 0).r;
+        float m01 = texelFetch(depthTex, min(fc + ivec2(0, 1), sz), 0).r;
+        float m11 = texelFetch(depthTex, min(fc + ivec2(1, 1), sz), 0).r;
+        float maskMax = max(max(m00, m10), max(m01, m11));
+        if (gl_FragCoord.z < maskMax) {
+            discard;
+            return;
+        }
     }
 
 

@@ -7,6 +7,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LeavesBlock;
+import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
@@ -341,6 +342,16 @@ public class Mapper {
             //Override opacity of leaves to be solid
             if (state.getBlock() instanceof LeavesBlock) {
                 this.opacity = 15;
+            } else if (state.getBlock() instanceof LiquidBlock) {
+                // Boost fluid opacity above any solid (max solid = 15) so Mipper.mip
+                // picks water/lava over an underwater riverbed. Solid > water in Mc's
+                // light-block scale (water=1, sand/stone=15), which made shallow-water
+                // mip groups select the bottom block — the water surface vanished and
+                // sand/dirt poked through, producing the stepped/depressed LoD
+                // shoreline. opacity is recomputed on deserialize (not persisted), so
+                // existing worlds get the fix on next launch. Computed once at state
+                // registration; zero per-frame cost.
+                this.opacity = 16;
             } else {
                 this.opacity = state.getLightBlock(Minecraft.getInstance().level, new BlockPos(0,0,0));
             }
