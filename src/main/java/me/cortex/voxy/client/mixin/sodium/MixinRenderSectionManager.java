@@ -4,6 +4,7 @@ import me.cortex.voxy.client.ICheekyClientChunkManager;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
 import me.cortex.voxy.client.core.VoxyRenderSystem;
+import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.world.service.VoxelIngestService;
 import me.cortex.voxy.commonImpl.VoxyCommon;
 import me.cortex.voxy.commonImpl.WorldIdentifier;
@@ -119,6 +120,11 @@ public class MixinRenderSectionManager {
             // propagation requires the outer neighbor, which never loads — so they got meshed but
             // never ingested, leaving black voids in the LoD ring. Accept any non-zero status; the
             // null light copy is already handled below.
+            if (this.cachedChunkStatus == 0) {
+                Logger.info("[voxy-trace] gate skip status=0 sec=("+x+","+y+","+z+")");
+            } else if (this.cachedChunkStatus != 3) {
+                Logger.info("[voxy-trace] gate loose-accept status="+this.cachedChunkStatus+" sec=("+x+","+y+","+z+")");
+            }
             if (this.cachedChunkStatus != 0) {
                 var section = this.level.getChunk(x,z).getSection(y-this.bottomSectionY);
                 var lp = this.level.getLightEngine();
@@ -143,8 +149,16 @@ public class MixinRenderSectionManager {
         if (wasBuilt) {//Remove
             //TODO: on chunk remove do ingest if is surrounded by built chunks (or when the tracker says is ok)
 
-            system.chunkBoundRenderer.removeSection(pos);
+            // Defer the depth-bound release until VoxelIngestService finishes the async
+            // ingest for this section. Otherwise we drop the mask while LoD has no data,
+            // producing the void/floating-island ring at the vanilla→LoD frontier.
+            var ingestSvc = (system.getEngine().instanceIn != null)
+                    ? system.getEngine().instanceIn.getIngestService()
+                    : null;
+            Logger.info("[voxy-trace] depth-bound REMOVE sec=("+x+","+y+","+z+") (wasStatus="+this.cachedChunkStatus+", deferring="+(ingestSvc!=null && ingestSvc.isIngestPending(pos))+")");
+            system.chunkBoundRenderer.deferRemoveSection(pos, ingestSvc);
         } else {//Add
+            Logger.info("[voxy-trace] depth-bound ADD sec=("+x+","+y+","+z+")");
             system.chunkBoundRenderer.addSection(pos);
         }
         return true;

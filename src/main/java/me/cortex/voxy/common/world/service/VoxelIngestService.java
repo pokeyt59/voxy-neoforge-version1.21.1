@@ -1,5 +1,6 @@
 package me.cortex.voxy.common.world.service;
 
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.thread.ServiceSlice;
 import me.cortex.voxy.common.thread.ServiceThreadPool;
@@ -25,6 +26,17 @@ public class VoxelIngestService {
     private final ServiceSlice threads;
     private record IngestSection(int cx, int cy, int cz, WorldEngine world, LevelChunkSection section, DataLayer blockLight, DataLayer skyLight){}
     private final ConcurrentLinkedDeque<IngestSection> ingestQueue = new ConcurrentLinkedDeque<>();
+    // Tracks section positions (SectionPos.asLong) currently queued or being processed.
+    // Used by ChunkBoundRenderer to defer releasing the depth-bound mask until the
+    // async ingest completes — otherwise vanilla unloads a section, the mask drops,
+    // and you see a void where LoD has no data yet.
+    private final LongOpenHashSet pendingIngests = new LongOpenHashSet();
+
+    public boolean isIngestPending(long sectionPos) {
+        synchronized (this.pendingIngests) {
+            return this.pendingIngests.contains(sectionPos);
+        }
+    }
 
     public VoxelIngestService(ServiceThreadPool pool) {
         this.threads = pool.createServiceNoCleanup("Ingest service", 5000, ()-> this::processJob);
@@ -35,18 +47,24 @@ public class VoxelIngestService {
         var section = task.section;
         var vs = SECTION_CACHE.get().setPosition(task.cx, task.cy, task.cz);
 
-        if (section.hasOnlyAir() && task.blockLight==null && task.skyLight==null) {//If the chunk section has lighting data, propagate it
-            WorldUpdater.insertUpdate(task.world, vs.zero());
-        } else {
-            VoxelizedSection csec = WorldConversionFactory.convert(
-                    SECTION_CACHE.get(),
-                    task.world.getMapper(),
-                    section.getStates(),
-                    section.getBiomes(),
-                    getLightingSupplier(task)
-            );
-            WorldConversionFactory.mipSection(csec, task.world.getMapper());
-            WorldUpdater.insertUpdate(task.world, csec);
+        try {
+            if (section.hasOnlyAir() && task.blockLight==null && task.skyLight==null) {//If the chunk section has lighting data, propagate it
+                WorldUpdater.insertUpdate(task.world, vs.zero());
+            } else {
+                VoxelizedSection csec = WorldConversionFactory.convert(
+                        SECTION_CACHE.get(),
+                        task.world.getMapper(),
+                        section.getStates(),
+                        section.getBiomes(),
+                        getLightingSupplier(task)
+                );
+                WorldConversionFactory.mipSection(csec, task.world.getMapper());
+                WorldUpdater.insertUpdate(task.world, csec);
+            }
+        } finally {
+            synchronized (this.pendingIngests) {
+                this.pendingIngests.remove(SectionPos.asLong(task.cx, task.cy, task.cz));
+            }
         }
     }
 
@@ -190,12 +208,19 @@ public class VoxelIngestService {
     }
 
     private boolean rawIngest0(WorldEngine engine, LevelChunkSection section, int x, int y, int z, DataLayer bl, DataLayer sl) {
+        // Mark pending BEFORE queueing so any check after queueing sees this section as pending.
+        synchronized (this.pendingIngests) {
+            this.pendingIngests.add(SectionPos.asLong(x, y, z));
+        }
         this.ingestQueue.add(new IngestSection(x, y, z, engine, section, bl, sl));
         try {
             this.threads.execute();
             return true;
         } catch (Exception e) {
             Logger.error("Executing had an error: assume shutting down, aborting",e);
+            synchronized (this.pendingIngests) {
+                this.pendingIngests.remove(SectionPos.asLong(x, y, z));
+            }
             return false;
         }
     }

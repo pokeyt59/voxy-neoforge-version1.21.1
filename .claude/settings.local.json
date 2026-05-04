@@ -82,7 +82,10 @@
       "Bash(unzip -l \"/c/Users/Newpi/.gradle/caches/modules-2/files-2.1/maven.modrinth/sodium/mc1.21.1-0.6.13-neoforge/38af70fa4dc4b2aaac636e92fdba3bedd5a025e1/sodium-mc1.21.1-0.6.13-neoforge.jar\")",
       "Bash(unzip -o \"/c/Users/Newpi/.gradle/caches/modules-2/files-2.1/maven.modrinth/sodium/mc1.21.1-0.6.13-neoforge/38af70fa4dc4b2aaac636e92fdba3bedd5a025e1/sodium-mc1.21.1-0.6.13-neoforge.jar\" \"net/caffeinemc/mods/sodium/client/render/chunk/map/ChunkTracker.class\")",
       "Bash(javap -p -c \"net/caffeinemc/mods/sodium/client/render/chunk/map/ChunkTracker.class\")",
-      "Bash(cygpath -w /tmp/sodium_extract/net/caffeinemc/mods/sodium/client/render/chunk/map/ChunkTracker.class)"
+      "Bash(cygpath -w /tmp/sodium_extract/net/caffeinemc/mods/sodium/client/render/chunk/map/ChunkTracker.class)",
+      "Bash(./gradlew compileJava --no-daemon -q)",
+      "Bash(./gradlew compileJava --console=plain)",
+      "Bash(jq --version)"
     ]
   }
 }

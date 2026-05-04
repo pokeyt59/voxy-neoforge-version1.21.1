@@ -1,6 +1,7 @@
 package me.cortex.voxy.client.core.rendering;
 
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.cortex.voxy.client.core.AbstractRenderPipeline;
 import me.cortex.voxy.client.core.gl.GlBuffer;
@@ -12,6 +13,7 @@ import me.cortex.voxy.client.core.gl.shader.ShaderType;
 import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.common.Logger;
+import me.cortex.voxy.common.world.service.VoxelIngestService;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.Mth;
 import org.joml.Matrix4f;
@@ -41,6 +43,11 @@ public class ChunkBoundRenderer {
 
     private final LongOpenHashSet addQueue = new LongOpenHashSet();
     private final LongOpenHashSet remQueue = new LongOpenHashSet();
+    // Sections waiting for their async ingest to complete before we drop the
+    // depth-bound mask. Otherwise vanilla unloads, the mask drops, and LoD
+    // hasn't ingested yet — you see void/sky for ~frames at the ring.
+    private final LongOpenHashSet deferredRemoves = new LongOpenHashSet();
+    private VoxelIngestService deferralIngestService;
 
     private final AbstractRenderPipeline pipeline;
     public ChunkBoundRenderer(AbstractRenderPipeline pipeline) {
@@ -62,6 +69,8 @@ public class ChunkBoundRenderer {
     }
 
     public void addSection(long pos) {
+        // Cancel a deferred remove if vanilla re-meshed this section before LoD ingest finished.
+        this.deferredRemoves.remove(pos);
         if (!this.remQueue.remove(pos)) {
             this.addQueue.add(pos);
         }
@@ -73,8 +82,32 @@ public class ChunkBoundRenderer {
         }
     }
 
+    // Same as removeSection, but if the ingest service still has a queued/in-flight ingest
+    // for this section, keep the depth-bound mask up until the ingest completes. Polled each
+    // frame in render(). Caller passes the ingest service so this class doesn't need a global.
+    public void deferRemoveSection(long pos, VoxelIngestService svc) {
+        if (svc == null || !svc.isIngestPending(pos)) {
+            this.removeSection(pos);
+            return;
+        }
+        this.deferralIngestService = svc;
+        this.deferredRemoves.add(pos);
+    }
+
     //Bind and render, changing as little gl state as possible so that the caller may configure how it wants to render
     public void render(Viewport<?> viewport) {
+        // Promote deferred removes whose ingest has now completed.
+        if (this.deferralIngestService != null && !this.deferredRemoves.isEmpty()) {
+            LongIterator it = this.deferredRemoves.iterator();
+            while (it.hasNext()) {
+                long pos = it.nextLong();
+                if (!this.deferralIngestService.isIngestPending(pos)) {
+                    it.remove();
+                    this.removeSection(pos);
+                }
+            }
+        }
+
         if (!this.remQueue.isEmpty()) {
             boolean wasEmpty = this.chunk2idx.isEmpty();
             this.remQueue.forEach(this::_remPos);//TODO: REPLACE WITH SCATTER COMPUTE

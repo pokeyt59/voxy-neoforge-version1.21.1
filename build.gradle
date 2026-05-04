@@ -35,6 +35,9 @@ runs {
     }
     client {
         workingDirectory project.file('run')
+        // JDWP open, no suspend — attach IntelliJ to localhost:5005 if you want
+        // live breakpoints / expression eval. Safe to leave on; only listens.
+        jvmArgument '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005'
     }
     server {
         workingDirectory project.file('run-server')
