@@ -243,6 +243,21 @@ public class Mapper {
         return this.blockId2stateEntry.get(blockId).opacity;
     }
 
+    private volatile int cachedCaveFillerId = -1;
+    //Synthetic block used by Mipper.mip to fill 2x2x2 groups that are entirely cave-interior
+    //air (every corner has sky-light == 0). Without this, large sealed caves and ravines
+    //become air voxels at LoD-1+ — the "x-ray effect" where caves visibly poke through the
+    //LoD surface. Filling with stone closes them; cave entrances with sky-light > 0 are
+    //still preserved as air. Looked up lazily and cached because Mipper.mip is on a hot
+    //ingest path and getIdForBlockState takes a lock on first call per state.
+    public int getCaveFillerId() {
+        int id = this.cachedCaveFillerId;
+        if (id != -1) return id;
+        id = this.getIdForBlockState(Blocks.STONE.defaultBlockState());
+        this.cachedCaveFillerId = id;
+        return id;
+    }
+
     public int getIdForBiome(Holder<Biome> biome) {
         String biomeId = biome.unwrapKey().get().location().toString();
         var entry = this.biome2biomeEntry.get(biomeId);
