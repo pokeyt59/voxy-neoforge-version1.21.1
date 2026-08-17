@@ -32,6 +32,15 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
     public float subDivisionSize = 64;
     public boolean renderVanillaFog = false;
     public boolean renderStatistics = false;
+    //When a shaderpack does not ship its own voxy.json patch, fall back to the patch bundled in
+    //voxy's assets so LoD still renders through the iris pipeline instead of silently dropping to
+    //the non-shader pipeline. Set false to require pack-provided support.
+    public boolean useBundledShaderPatch = true;
+    //Present voxy's LoD to shaderpacks as Distant Horizons LoD (DISTANT_HORIZONS macro, dhDepthTex*,
+    //dhProjection/dhFarPlane/...). Packs have no notion of voxy, but nearly all of them already handle DH,
+    //and that is the only route by which a pack's composite passes can resolve geometry past the vanilla far
+    //plane instead of fogging it flat. See IrisShaderPatch.IMPERSONATE_DISTANT_HORIZONS.
+    public boolean impersonateDistantHorizons = true;
 
     private static VoxyConfig loadOrCreate() {
         if (VoxyCommon.isAvailable()) {

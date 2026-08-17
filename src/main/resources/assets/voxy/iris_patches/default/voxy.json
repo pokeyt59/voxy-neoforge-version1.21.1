@@ -1,0 +1,18 @@
+{
+  "version": 1,
+
+  "opaqueDrawBuffers": [0],
+  "translucentDrawBuffers": [0],
+
+  "uniforms": [],
+
+  "samplers": {},
+
+  "opaquePatchData": "",
+
+  "blending": {
+    "0": "SRC_ALPHA ONE_MINUS_SRC_ALPHA ONE ONE_MINUS_SRC_ALPHA"
+  },
+
+  "excludeLodsFromVanillaDepth": false
+}

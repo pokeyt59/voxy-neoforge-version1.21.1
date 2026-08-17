@@ -6,6 +6,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
+import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.common.Logger;
 import net.irisshaders.iris.shaderpack.ShaderPack;
 import net.irisshaders.iris.shaderpack.include.AbsolutePackPath;
@@ -23,7 +24,25 @@ import static org.lwjgl.opengl.GL33.*;
 public class IrisShaderPatch {
     public static final int VERSION = ((IntSupplier)()->1).getAsInt();
 
-    public static final boolean IMPERSONATE_DISTANT_HORIZONS = System.getProperty("voxy.impersonateDHShader", "false").equalsIgnoreCase("true");
+    //Present voxy's LoD to the shaderpack as if it were Distant Horizons: defines the DISTANT_HORIZONS macro,
+    //binds voxy's LoD depth as dhDepthTex*, and feeds dhProjection/dhFarPlane/... from voxy's viewport.
+    //
+    //This is what lets a pack see LoD at all beyond the vanilla far plane. Voxy blits its depth back into the
+    //vanilla depth buffer, but that buffer's projection clamps everything past `far` to depth 1.0, so a pack's
+    //composite passes read distant LoD as "at the far plane" and bury it in fog. Packs already solve exactly
+    //this for DH by reading dhDepthTex through dhProjectionInverse, so borrowing that path is far cheaper than
+    //asking every pack to grow voxy-specific support.
+    //
+    //Defaults on; the system property still forces either way for quick A/B testing.
+    public static final boolean IMPERSONATE_DISTANT_HORIZONS = resolveImpersonateDistantHorizons();
+
+    private static boolean resolveImpersonateDistantHorizons() {
+        String override = System.getProperty("voxy.impersonateDHShader");
+        if (override != null) {
+            return override.equalsIgnoreCase("true");
+        }
+        return VoxyConfig.CONFIG.impersonateDistantHorizons;
+    }
 
 
 
@@ -285,17 +304,49 @@ public class IrisShaderPatch {
             .setLenient()
             .create();
 
+    //Reads one of the patch files, either from the pack or from voxy's bundled fallback set. The two are never
+    //mixed: a pack that ships a voxy.json owns the whole patch, including its auxiliary glsl files.
+    private static String patchSource(boolean bundled, AbsolutePackPath directory, Function<AbsolutePackPath, String> sourceProvider, String fileName) {
+        return bundled ? BundledShaderPatch.get(fileName) : sourceProvider.apply(directory.resolve(fileName));
+    }
+
     public static IrisShaderPatch makePatch(ShaderPack ipack, AbsolutePackPath directory, Function<AbsolutePackPath, String> sourceProvider) {
-        String voxyPatchData = sourceProvider.apply(directory.resolve("voxy.json"));
-        if (voxyPatchData == null) {//No voxy patch data in shaderpack
+        String packPatchData = sourceProvider.apply(directory.resolve("voxy.json"));
+
+        //A pack that ships its own patch owns it outright, and keeps the loud failure path below: a pack
+        //author needs to see that their patch is broken rather than have it quietly ignored.
+        if (packPatchData != null && !packPatchData.isBlank()) {
+            return parsePatch(packPatchData, ipack, directory, sourceProvider, false);
+        }
+
+        //Otherwise fall back to the patch bundled in voxy's assets. Without it voxy drops all the way to the
+        //non-shader pipeline, rendering LoD outside the pack's knowledge — unlit against shaded vanilla
+        //terrain, and fogged out by composite passes that never see a sensible depth for it.
+        if (!VoxyConfig.CONFIG.useBundledShaderPatch) {
+            Logger.warn("Shaderpack provides no voxy.json and the bundled patch is disabled, voxy LoD will render outside the shader pipeline");
+            return null;
+        }
+        String bundledPatchData = BundledShaderPatch.get("voxy.json");
+        if (bundledPatchData == null || bundledPatchData.isBlank()) {
+            Logger.error("Bundled voxy iris patch is missing or empty, voxy LoD will render outside the shader pipeline");
             return null;
         }
 
-        //A more graceful exit on blank string
-        if (voxyPatchData.isBlank()) {
+        //A broken bundled patch is voxy's own bug and must not take shaderpack loading down with it (makePatch
+        //runs inside ProgramSet's constructor), so unlike the pack path it degrades instead of throwing.
+        try {
+            var patch = parsePatch(bundledPatchData, ipack, directory, sourceProvider, true);
+            if (patch != null) {
+                Logger.info("Shaderpack provides no voxy.json, using voxy's bundled iris patch");
+            }
+            return patch;
+        } catch (Throwable t) {
+            Logger.error("Bundled voxy iris patch failed to load, voxy LoD will render outside the shader pipeline", t);
             return null;
         }
+    }
 
+    private static IrisShaderPatch parsePatch(String voxyPatchData, ShaderPack ipack, AbsolutePackPath directory, Function<AbsolutePackPath, String> sourceProvider, boolean bundled) {
         //Escape things
         voxyPatchData = voxyPatchData.replace("\\", "\\\\");
 
@@ -323,16 +374,16 @@ public class IrisShaderPatch {
             }
 
             {//Inject data from the auxilery files if they are present
-                var opaque = sourceProvider.apply(directory.resolve("voxy_opaque.glsl"));
+                var opaque = patchSource(bundled, directory, sourceProvider, "voxy_opaque.glsl");
                 if (opaque != null) {
                     patchData.opaquePatchData = opaque;
                 }
-                var translucent = sourceProvider.apply(directory.resolve("voxy_translucent.glsl"));
+                var translucent = patchSource(bundled, directory, sourceProvider, "voxy_translucent.glsl");
                 if (translucent != null) {
                     patchData.translucentPatchData = translucent;
                 }
                 //This might be ok? not.. sure if is nice or not
-                var taa = sourceProvider.apply(directory.resolve("voxy_taa.glsl"));
+                var taa = patchSource(bundled, directory, sourceProvider, "voxy_taa.glsl");
                 if (taa != null) {
                     patchData.taaOffset = taa;
                 }

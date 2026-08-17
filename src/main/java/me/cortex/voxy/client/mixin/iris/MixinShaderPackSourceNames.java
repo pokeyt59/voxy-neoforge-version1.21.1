@@ -15,6 +15,9 @@ public class MixinShaderPackSourceNames {
         builder.add("voxy.json");
         builder.add("voxy_opaque.glsl");
         builder.add("voxy_translucent.glsl");
+        //IrisShaderPatch.makePatch also reads voxy_taa.glsl; without it listed here a pack shipping one would
+        //never have it include-processed, so the lookup always came back null.
+        builder.add("voxy_taa.glsl");
         return builder;
     }
 }

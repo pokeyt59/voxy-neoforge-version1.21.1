@@ -272,6 +272,12 @@ public class IrisVoxyRenderPipelineData {
     }
 
     private static CachedUniform[] createUniformSet(CustomUniforms cu, IrisShaderPatch patch) {
+        //A patch that requests no uniforms never gets an entry in the CustomUniforms location map, so the
+        //getLocationMap().get(patch) lookup below would NPE. There is nothing to lay out in that case.
+        if (patch.getUniformList().length == 0) {
+            return new CachedUniform[0];
+        }
+
         //This is a fking awful hack... but it works thinks
         LocationalUniformHolder uniformBuilder = new LocationalUniformHolder() {
             @Override
@@ -321,6 +327,8 @@ public class IrisVoxyRenderPipelineData {
     }
     private static ImageSet createImageSet(IrisRenderingPipeline ipipe, IrisShaderPatch patch) {
         var samplerDataSet = patch.getSamplerSet();
+        //A patch that omits "samplers" entirely leaves this null rather than empty
+        if (samplerDataSet == null) return null;
         Set<String> samplerNameSet = new LinkedHashSet<>(samplerDataSet.keySet());
         if (samplerNameSet.isEmpty()) return null;
         Set<TextureWSampler> samplerSet = new LinkedHashSet<>();
@@ -408,9 +416,11 @@ public class IrisVoxyRenderPipelineData {
                 int unit = j+base;
                 var ts = samplers[j];
                 glBindTextureUnit(unit, ts.texture.getAsInt());
-                if (ts.sampler != -1) {
-                    glBindSampler(unit, ts.sampler);
-                }//TODO: might need to bind sampler 0
+                //Always reset the unit's sampler object, don't just skip when iris supplied none. Sampler
+                //objects persist per texture unit across draws, and iris binds its shadow samplers with
+                //GL_COMPARE_REF_TO_TEXTURE — sampling a colour texture through a leftover comparison sampler
+                //returns zero, which silently renders every fragment black.
+                glBindSampler(unit, ts.sampler != -1 ? ts.sampler : 0);
             }
         };
         return new ImageSet(builder.toString(), bindingFunction);

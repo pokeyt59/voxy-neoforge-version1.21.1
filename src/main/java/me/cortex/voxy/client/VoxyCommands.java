@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.commonImpl.VoxyCommon;
 import me.cortex.voxy.commonImpl.WorldIdentifier;
 import me.cortex.voxy.commonImpl.importers.DHImporter;
@@ -14,11 +15,14 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.network.chat.Component;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.concurrent.CompletableFuture;
 
 
@@ -52,10 +56,107 @@ public class VoxyCommands {
                             .executes(VoxyCommands::importDistantHorizons)));
         }
 
+        var cache = Commands.literal("cache")
+                .then(Commands.literal("clear")
+                        .executes(ctx -> clearCache(ctx, false))
+                        .then(Commands.literal("all")
+                                .executes(ctx -> clearCache(ctx, true))));
+
         return Commands.literal("voxy").requires(ctx -> VoxyCommon.getInstance() != null)
                 .then(Commands.literal("reload")
                         .executes(VoxyCommands::reloadInstance))
+                .then(cache)
                 .then(imports);
+    }
+
+    /**
+     * Deletes voxy's stored LoD sections so they get re-ingested with the current mip/lighting code.
+     *
+     * <p>Any change to ingest-time logic (Mipper, opacity, lighting defaults) only affects sections as they are
+     * written, so already-cached terrain keeps rendering with whatever code was active when it was first
+     * ingested — which has repeatedly looked like the fix "not working". Clearing forces a rebuild.
+     *
+     * <p>Only voxy's own LoD cache is touched; the vanilla save (region/, level.dat, playerdata/) is untouched
+     * and the terrain re-ingests as you explore, so this costs CPU rather than world data.
+     *
+     * @param all when true clears every dimension cached for this save, otherwise just the current one
+     */
+    private static int clearCache(CommandContext<CommandSourceStack> ctx, boolean all) {
+        var instance = (VoxyClientInstance) VoxyCommon.getInstance();
+        if (instance == null) return 1;
+
+        //Resolve targets before shutting anything down, we lose the instance below
+        var basePath = instance.getStorageBasePath();
+        var targets = new ArrayList<Path>();
+        if (all) {
+            try (var dirs = Files.list(basePath)) {
+                dirs.filter(Files::isDirectory)
+                        .map(dir -> dir.resolve("storage"))
+                        .filter(Files::isDirectory)
+                        .forEach(targets::add);
+            } catch (IOException e) {
+                Logger.error("Failed to enumerate voxy caches under " + basePath, e);
+                feedback(ctx, "Failed to enumerate voxy caches, see log");
+                return 1;
+            }
+        } else {
+            var world = WorldIdentifier.of(Minecraft.getInstance().player.clientLevel);
+            if (world == null) {
+                feedback(ctx, "Could not identify the current world");
+                return 1;
+            }
+            var dir = basePath.resolve(world.getWorldId()).resolve("storage");
+            if (Files.isDirectory(dir)) targets.add(dir);
+        }
+
+        if (targets.isEmpty()) {
+            feedback(ctx, "No voxy LoD cache to clear");
+            return 1;
+        }
+
+        //RocksDB holds a LOCK file inside storage/, so the instance has to go down before we can delete it.
+        //Same shutdown/recreate dance as /voxy reload.
+        var wr = Minecraft.getInstance().levelRenderer;
+        if (wr != null) ((IGetVoxyRenderSystem) wr).shutdownRenderer();
+        VoxyCommon.shutdownInstance();
+
+        long freed = 0;
+        int failed = 0;
+        for (var target : targets) {
+            try {
+                freed += deleteRecursively(target);
+            } catch (IOException e) {
+                failed++;
+                Logger.error("Failed to clear voxy LoD cache at " + target, e);
+            }
+        }
+
+        VoxyCommon.createInstance();
+        if (wr != null) ((IGetVoxyRenderSystem) wr).createRenderer();
+
+        long freedMB = freed / (1024 * 1024);
+        String msg = "Cleared " + (targets.size() - failed) + "/" + targets.size()
+                + " voxy LoD cache(s), freed ~" + freedMB + "MB. Terrain will re-ingest as you explore.";
+        if (failed != 0) msg += " " + failed + " failed, see log.";
+        feedback(ctx, msg);
+        return failed == 0 ? 0 : 1;
+    }
+
+    /** Deletes a directory tree depth-first, returning the total bytes removed. */
+    private static long deleteRecursively(Path dir) throws IOException {
+        long freed = 0;
+        try (var walk = Files.walk(dir)) {
+            //Reverse order puts children before their parents so each directory is empty when we reach it
+            for (var path : walk.sorted(Comparator.reverseOrder()).toList()) {
+                if (Files.isRegularFile(path)) freed += Files.size(path);
+                Files.deleteIfExists(path);
+            }
+        }
+        return freed;
+    }
+
+    private static void feedback(CommandContext<CommandSourceStack> ctx, String message) {
+        ctx.getSource().sendSuccess(() -> Component.literal("[voxy] " + message), false);
     }
 
     private static int reloadInstance(CommandContext<CommandSourceStack> ctx) {

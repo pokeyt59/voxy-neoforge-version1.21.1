@@ -31,7 +31,12 @@ public class VoxyServerChunkEvents {
         }
         VoxelIngestService.tryAutoIngestChunk(lc);
         int n = ingestCounter.incrementAndGet();
-        if ((n & 0xFF) == 0) {
+        //Report the first one outright. This is the only ingest path that covers chunks generated outside the
+        //client's view (Chunky pregen, force-loaded chunks), and with a 256-chunk reporting interval its
+        //absence from a log was previously indistinguishable from the hook never firing at all.
+        if (n == 1) {
+            Logger.info("[voxy-trace] server-side chunk ingest active (covers Chunky pregen / force-loaded chunks)");
+        } else if ((n & 0xFF) == 0) {
             Logger.info("[voxy-trace] server-side chunk-load ingests: " + n);
         }
     }
