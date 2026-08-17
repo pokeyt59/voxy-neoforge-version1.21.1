@@ -168,7 +168,8 @@ public class DhProgramSources {
      * bundled patch. Uniforms are deliberately left unbound: unbound uniforms link fine and read zero, which
      * keeps this isolated to the shader interface.
      */
-    public void verifyLinkage(net.irisshaders.iris.pipeline.IrisRenderingPipeline pipeline) {
+    public void verifyLinkage(net.irisshaders.iris.pipeline.IrisRenderingPipeline pipeline,
+                             net.irisshaders.iris.uniforms.custom.CustomUniforms customUniforms) {
         String vertex;
         try {
             vertex = buildDhVertexSource();
@@ -176,21 +177,47 @@ public class DhProgramSources {
             Logger.error("[voxy-dh] could not build the DH vertex shader source", t);
             return;
         }
-        tryLink("dh_terrain", this.terrainFragment, vertex, pipeline);
+        tryLink("dh_terrain", this.terrainFragment, vertex, pipeline, customUniforms);
         if (this.waterFragment != null) {
-            tryLink("dh_water", this.waterFragment, vertex, pipeline);
+            tryLink("dh_water", this.waterFragment, vertex, pipeline, customUniforms);
         }
     }
 
-    private static void tryLink(String name, String fragment, String vertex, net.irisshaders.iris.pipeline.IrisRenderingPipeline pipeline) {
+    private static void tryLink(String name, String fragment, String vertex,
+                                net.irisshaders.iris.pipeline.IrisRenderingPipeline pipeline,
+                                net.irisshaders.iris.uniforms.custom.CustomUniforms customUniforms) {
         try {
+            //The last argument is the set of RESERVED texture units, not the flipped render targets — iris
+            //registers three externally-managed samplers in addLevelSamplers (the block atlas, lightmap and
+            //iris_overlay) on the conventional vanilla units 0/1/2, and refuses to add them unless those
+            //units are reserved here. Everything else, voxy_atlas included, is allocated a free unit above.
             var builder = net.irisshaders.iris.gl.program.ProgramBuilder.begin(
-                    "voxy_" + name, vertex, null, fragment, pipeline.getFlippedAfterPrepare());
+                    "voxy_" + name, vertex, null, fragment,
+                    com.google.common.collect.ImmutableSet.of(0, 1, 2));
+
+            //Same binding recipe iris uses for its own DH program (IrisLodRenderProgram). ProgramBuilder
+            //extends ProgramUniforms.Builder and implements SamplerHolder/ImageHolder, so it is all three
+            //holders at once. Note this is addDynamicUniforms, not addCommonUniforms — that is what keeps an
+            //IdMap out of the picture entirely.
+            net.irisshaders.iris.uniforms.CommonUniforms.addDynamicUniforms(
+                    builder, net.irisshaders.iris.gl.state.FogMode.PER_VERTEX);
+            net.irisshaders.iris.uniforms.builtin.BuiltinReplacementUniforms.addBuiltinReplacementUniforms(builder);
+            //Without this the pack's own custom uniforms (Complementary defines a lot of them) all read zero.
+            customUniforms.assignTo(builder);
+
+            pipeline.addGbufferOrShadowSamplers(builder, builder, pipeline::getFlippedAfterPrepare,
+                    false, true, true, false);
+
+            //Voxy's block atlas, consumed by the texturing injected into the pack's fragment. Supplied lazily
+            //because the model bakery has not created it yet at pipeline construction time.
+            builder.addDynamicSampler(VoxyAtlasBinding::currentAtlasTexture, "voxy_atlas");
+
             var program = builder.build();
-            Logger.info("[voxy-dh] " + name + ": LINK OK");
+            customUniforms.mapholderToPass(builder, program);
+            Logger.info("[voxy-dh] " + name + ": PROGRAM BUILT (uniforms + samplers bound)");
             program.destroy();
         } catch (Throwable t) {
-            Logger.error("[voxy-dh] " + name + ": LINK FAILED", t);
+            Logger.error("[voxy-dh] " + name + ": PROGRAM BUILD FAILED", t);
         }
     }
 

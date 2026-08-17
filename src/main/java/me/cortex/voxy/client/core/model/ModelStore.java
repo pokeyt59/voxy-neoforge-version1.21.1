@@ -2,6 +2,7 @@ package me.cortex.voxy.client.core.model;
 
 import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.client.core.gl.GlTexture;
+import me.cortex.voxy.client.iris.VoxyAtlasBinding;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
@@ -38,13 +39,17 @@ public class ModelStore {
         glSamplerParameteri(this.blockSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
         glSamplerParameteri(this.blockSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glSamplerParameteri(this.blockSampler, GL_TEXTURE_MIN_LOD, 0);
-        glSamplerParameteri(this.blockSampler, GL_TEXTURE_MAX_LOD, mipLvl);//Integer.numberOfTrailingZeros(ModelFactory.MODEL_TEXTURE_SIZE)
+        glSamplerParameteri(this.blockSampler, GL_TEXTURE_MAX_LOD, mipLvl);
+
+        //Publish the atlas so the shaderpack's DH programs can sample it; they are built before this exists.
+        VoxyAtlasBinding.set(this.textures.id);//Integer.numberOfTrailingZeros(ModelFactory.MODEL_TEXTURE_SIZE)
     }
 
 
     public void free() {
         this.modelBuffer.free();
         this.modelColourBuffer.free();
+        VoxyAtlasBinding.clear();
         this.textures.free();
         glDeleteSamplers(this.blockSampler);
     }

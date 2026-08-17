@@ -53,7 +53,7 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
         //nothing yet; this is the last unknown before building the real geometry path. See DhProgramSources.
         var dhSources = ((IGetDhProgramSources) programSet).voxy$getDhProgramSources();
         if (dhSources != null) {
-            dhSources.verifyLinkage((IrisRenderingPipeline) (Object) this);
+            dhSources.verifyLinkage((IrisRenderingPipeline) (Object) this, this.customUniforms);
         }
     }
 
