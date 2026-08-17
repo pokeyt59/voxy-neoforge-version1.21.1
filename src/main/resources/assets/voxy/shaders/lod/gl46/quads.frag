@@ -23,6 +23,9 @@ layout(location = 7) in flat uint quadDebug;
 layout(location = 0) out vec4 outColour;
 #else
 
+//Camera-relative world-axis-aligned fragment position, emitted by quads2.vert for patched shaders
+layout(location = 2) in vec3 voxyRelativePos;
+
 //Bind the model buffer and import the model system as we need it
 #define MODEL_BUFFER_BINDING 3
 #import <voxy:lod/block_model.glsl>
@@ -85,6 +88,7 @@ struct VoxyFragmentParameters {
     vec2 lightMap;
     vec4 tinting;
     uint customId;//Same as iris's modelId
+    vec3 relativePos;//Fragment position relative to the camera, world-axis-aligned
 };
 
 void voxy_emitFragment(VoxyFragmentParameters parameters);
@@ -209,7 +213,7 @@ void main() {
         tint = uint2vec4RGBA(interData.z).yzwx;
     }
 
-    voxy_emitFragment(VoxyFragmentParameters(colour, tile, texPos, getFace(), modelId, getLightmap().yx, tint, model.customId));
+    voxy_emitFragment(VoxyFragmentParameters(colour, tile, texPos, getFace(), modelId, getLightmap().yx, tint, model.customId, voxyRelativePos));
 
     #endif
 }

@@ -17,6 +17,13 @@
 layout(location = 0) out vec2 uv;
 layout(location = 1) out flat uvec4 interData;
 
+#ifdef PATCHED_SHADER
+//Camera-relative, world-axis-aligned position of this vertex. A shader patch otherwise only receives uv and
+//the packed per-quad data, which is not enough for anything view-dependent — fresnel, distance falloff,
+//reflection vectors. Only emitted for patched shaders so the normal pipeline keeps its vertex layout.
+layout(location = 2) out vec3 voxyRelativePos;
+#endif
+
 uint packVec4(vec4 vec) {
     uvec4 vec_=uvec4(vec*255)<<uvec4(24,16,8,0);
     return vec_.x|vec_.y|vec_.z|vec_.w;
@@ -117,6 +124,13 @@ void main() {
     vec3 origin = vec3(((extractLoDPosition(encPos)<<lodLevel) - baseSectionPos)<<5);
     vec3 pointPos = (cornerPos+swizzelDataAxis(face>>1,vec3(cQuadSize,0)))*(1<<lodLevel)+origin;
     gl_Position = MVP*vec4(pointPos, 1.0);
+
+    #ifdef PATCHED_SHADER
+    //pointPos and cameraSubPos are both relative to baseSectionPos<<5, so the difference is the offset from
+    //the eye — the same convention cmdgen.comp uses for its cornerPos - cameraSubPos. (MVP already has the
+    //camera translation folded in, so gl_Position cannot be reused for this.)
+    voxyRelativePos = pointPos - cameraSubPos;
+    #endif
 
     //Apply taa shift
     gl_Position.xy += taaShift()*gl_Position.w;

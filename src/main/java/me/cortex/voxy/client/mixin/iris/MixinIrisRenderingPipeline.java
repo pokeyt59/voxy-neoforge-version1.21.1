@@ -2,6 +2,7 @@ package me.cortex.voxy.client.mixin.iris;
 
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
 import me.cortex.voxy.client.core.util.IrisUtil;
+import me.cortex.voxy.client.iris.IGetDhProgramSources;
 import me.cortex.voxy.client.iris.IGetIrisVoxyPipelineData;
 import me.cortex.voxy.client.iris.IGetVoxyPatchData;
 import me.cortex.voxy.client.iris.IrisShaderPatch;
@@ -46,6 +47,13 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
                 this.pipeline = null;
                 Logger.error("Failed to build voxy iris pipeline data, falling back to voxy's non-shader pipeline", t);
             }
+        }
+
+        //Proves the pack's own DH fragment programs link against a voxy-authored vertex shader. Renders
+        //nothing yet; this is the last unknown before building the real geometry path. See DhProgramSources.
+        var dhSources = ((IGetDhProgramSources) programSet).voxy$getDhProgramSources();
+        if (dhSources != null) {
+            dhSources.verifyLinkage((IrisRenderingPipeline) (Object) this);
         }
     }
 

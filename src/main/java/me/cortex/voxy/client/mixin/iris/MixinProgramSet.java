@@ -2,6 +2,8 @@ package me.cortex.voxy.client.mixin.iris;
 
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.util.IrisUtil;
+import me.cortex.voxy.client.iris.DhProgramSources;
+import me.cortex.voxy.client.iris.IGetDhProgramSources;
 import me.cortex.voxy.client.iris.IGetVoxyPatchData;
 import me.cortex.voxy.client.iris.IrisShaderPatch;
 import net.irisshaders.iris.shaderpack.ShaderPack;
@@ -20,14 +22,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.function.Function;
 
 @Mixin(value = ProgramSet.class, remap = false)
-public class MixinProgramSet implements IGetVoxyPatchData {
+public class MixinProgramSet implements IGetVoxyPatchData, IGetDhProgramSources {
     @Shadow @Final private PackDirectives packDirectives;
     @Unique IrisShaderPatch patchData;
+    @Unique DhProgramSources dhProgramSources;
 
     @Inject(method = "<init>", at = @At(value = "INVOKE", target = "Lnet/irisshaders/iris/shaderpack/programs/ProgramSet;locateDirectives()V", shift = At.Shift.BEFORE))
     private void voxy$injectPatchMaker(AbsolutePackPath directory, Function<AbsolutePackPath, String> sourceProvider, ShaderProperties shaderProperties, ShaderPack pack, CallbackInfo ci) {
         if (VoxyConfig.CONFIG.isRenderingEnabled() && IrisUtil.SHADER_SUPPORT) {
             this.patchData = IrisShaderPatch.makePatch(pack, directory, sourceProvider);
+            //Grab and prepare the pack's own DH programs while the source provider is in scope — this is the
+            //only point where the pack's include-processed sources are reachable. See DhProgramSources.
+            this.dhProgramSources = DhProgramSources.create(directory, sourceProvider);
         }
         /*
         if (this.patchData != null) {
@@ -47,5 +53,10 @@ public class MixinProgramSet implements IGetVoxyPatchData {
     @Override
     public IrisShaderPatch voxy$getPatchData() {
         return this.patchData;
+    }
+
+    @Override
+    public DhProgramSources voxy$getDhProgramSources() {
+        return this.dhProgramSources;
     }
 }
