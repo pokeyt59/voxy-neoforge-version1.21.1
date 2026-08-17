@@ -56,11 +56,25 @@ public class DhProgramSources {
     //factor), not as opacity, so taking it from the texture would corrupt its shading.
     //This mirrors a pattern the pack already relies on — it initialises globals from varyings itself, e.g.
     //`float NdotU = dot(normal, upVec);` — so a non-const global initialiser here is nothing new to it.
+    //The atlas lookup mirrors quads.frag exactly: merged quads span several tiles and repeat the texture, so
+    //the tile index has to come off a per-pixel modf rather than an interpolated uv, and the mip gradients
+    //are taken from the smooth uv so tile wrapping does not blow the derivatives out at tile seams.
     private static final String GL_COLOR_INJECTION = """
             in vec4 voxy_vertexTint;
-            in vec2 voxy_atlasUV;
+            in vec2 voxy_uv;
+            flat in uvec2 voxy_texData;
             uniform sampler2D voxy_atlas;
-            vec4 glColor = vec4(texture(voxy_atlas, voxy_atlasUV).rgb * voxy_vertexTint.rgb, voxy_vertexTint.a);
+            vec4 voxy_sampleAtlas() {
+                vec2 tile;
+                vec2 inTile = modf(voxy_uv, tile) * (1.0 / (vec2(3.0, 2.0) * 256.0));
+                uint modelId = voxy_texData.x;
+                uint face = voxy_texData.y;
+                vec2 modelUV = vec2(modelId & 0xFFu, (modelId >> 8) & 0xFFu) * (1.0 / 256.0);
+                vec2 texPos = modelUV + (vec2(face >> 1u, face & 1u) * (1.0 / (vec2(3.0, 2.0) * 256.0))) + inTile;
+                vec2 smoothUV = voxy_uv * (1.0 / (vec2(3.0, 2.0) * 256.0));
+                return textureGrad(voxy_atlas, texPos, dFdx(smoothUV), dFdy(smoothUV));
+            }
+            vec4 glColor = vec4(voxy_sampleAtlas().rgb * voxy_vertexTint.rgb, voxy_vertexTint.a);
             """;
 
     private final String terrainFragment;
@@ -138,51 +152,40 @@ public class DhProgramSources {
         return fragment.replace(GL_COLOR_DECL, GL_COLOR_INJECTION);
     }
 
-    //Minimal vertex shader emitting exactly the interface the patched fragment consumes, with placeholder
-    //values. Used to prove the contract links before the real geometry-producing vertex shader is written —
-    //uniforms are deliberately left unbound, since unbound uniforms link fine and simply read zero, which
-    //keeps this test isolated to the varying interface.
-    private static final String LINK_TEST_VERTEX = """
-            #version 330 core
-            flat out int mat;
-            out vec2 lmCoord;
-            flat out vec3 upVec, sunVec, northVec, eastVec;
-            out vec3 normal;
-            out vec3 playerPos;
-            out float iris_FogFragCoord;
-            out vec4 voxy_vertexTint;
-            out vec2 voxy_atlasUV;
-            void main() {
-                mat = 0;
-                lmCoord = vec2(0.0);
-                upVec = vec3(0.0, 1.0, 0.0);
-                sunVec = vec3(0.0, 1.0, 0.0);
-                northVec = vec3(0.0, 0.0, 1.0);
-                eastVec = vec3(1.0, 0.0, 0.0);
-                normal = vec3(0.0, 1.0, 0.0);
-                playerPos = vec3(0.0);
-                iris_FogFragCoord = 0.0;
-                voxy_vertexTint = vec4(1.0);
-                voxy_atlasUV = vec2(0.0);
-                gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
-            }
-            """;
+    /**
+     * Builds voxy's real LoD vertex shader with the DH varying block enabled. Using this rather than a stub
+     * means the link test also proves the vertex side and the injected fragment code agree on the interface.
+     */
+    public static String buildDhVertexSource() {
+        String source = me.cortex.voxy.client.core.gl.shader.ShaderLoader.parse("voxy:lod/gl46/quads2.vert");
+        //ShaderLoader prepends a single canonical #version line; the define has to land after it.
+        return source.replaceFirst("(?m)^(#version[^\\n]*\\n)", "$1#define DH_SHADER\n");
+    }
 
     /**
-     * Compiles and links the prepared fragment programs against a stub vertex shader to prove the interface
-     * holds, logging the outcome. Renders nothing and is safe to fail — voxy keeps using its bundled patch.
+     * Compiles and links the prepared fragment programs against voxy's real LoD vertex shader to prove the
+     * interface holds, logging the outcome. Renders nothing and is safe to fail — voxy keeps using its
+     * bundled patch. Uniforms are deliberately left unbound: unbound uniforms link fine and read zero, which
+     * keeps this isolated to the shader interface.
      */
     public void verifyLinkage(net.irisshaders.iris.pipeline.IrisRenderingPipeline pipeline) {
-        tryLink("dh_terrain", this.terrainFragment, pipeline);
+        String vertex;
+        try {
+            vertex = buildDhVertexSource();
+        } catch (Throwable t) {
+            Logger.error("[voxy-dh] could not build the DH vertex shader source", t);
+            return;
+        }
+        tryLink("dh_terrain", this.terrainFragment, vertex, pipeline);
         if (this.waterFragment != null) {
-            tryLink("dh_water", this.waterFragment, pipeline);
+            tryLink("dh_water", this.waterFragment, vertex, pipeline);
         }
     }
 
-    private static void tryLink(String name, String fragment, net.irisshaders.iris.pipeline.IrisRenderingPipeline pipeline) {
+    private static void tryLink(String name, String fragment, String vertex, net.irisshaders.iris.pipeline.IrisRenderingPipeline pipeline) {
         try {
             var builder = net.irisshaders.iris.gl.program.ProgramBuilder.begin(
-                    "voxy_" + name, LINK_TEST_VERTEX, null, fragment, pipeline.getFlippedAfterPrepare());
+                    "voxy_" + name, vertex, null, fragment, pipeline.getFlippedAfterPrepare());
             var program = builder.build();
             Logger.info("[voxy-dh] " + name + ": LINK OK");
             program.destroy();

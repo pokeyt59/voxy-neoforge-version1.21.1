@@ -24,6 +24,57 @@ layout(location = 1) out flat uvec4 interData;
 layout(location = 2) out vec3 voxyRelativePos;
 #endif
 
+#ifdef DH_SHADER
+//Pairs this vertex shader with the shaderpack's own (iris-transformed) dh_terrain/dh_water fragment shader,
+//so LoD is lit by the pack itself rather than by voxy's approximation. The names and semantics below are
+//dictated by that fragment and must match exactly; they were read off the transformed source rather than
+//guessed. Deliberately declared without explicit locations so they link by name against a fragment we do
+//not control.
+//Explicit locations are required: this shader already binds uv at 0, interData at 1, voxyRelativePos at 2 and
+//quadDebug at 7, and unqualified outputs would be auto-assigned from 0 and collide with them ("multiple
+//bindings to output semantic ATTR0"). Starting at 8 clears all of them. The pack's fragment declares these
+//without locations, which is fine — a location on only one side still matches by name.
+layout(location = 8)  flat out int mat;
+layout(location = 9)  out vec2 lmCoord;
+layout(location = 10) flat out vec3 upVec;
+layout(location = 11) flat out vec3 sunVec;
+layout(location = 12) flat out vec3 northVec;
+layout(location = 13) flat out vec3 eastVec;
+layout(location = 14) out vec3 normal;
+layout(location = 15) out vec3 playerPos;
+layout(location = 16) out float iris_FogFragCoord;
+//Injected by DhProgramSources in place of the pack's `in vec4 glColor`, because DH LoD is untextured and
+//voxy's is not. The atlas lookup cannot be reduced to a per-vertex uv: merged quads span several tiles and
+//repeat the texture, which quads.frag resolves with a per-pixel modf. So the raw uv and the per-quad tile
+//data are handed over and the injected fragment code redoes that same lookup.
+layout(location = 17) out vec4 voxy_vertexTint;
+layout(location = 18) out vec2 voxy_uv;
+layout(location = 19) flat out uvec2 voxy_texData;//x = modelId, y = face
+
+uniform mat4 gbufferModelView;
+uniform float sunPathRotation;
+uniform float timeAngle;
+
+//Copied verbatim from the pack's transformed dh_terrain vertex shader so the sun lands in the same place the
+//fragment's lighting expects. Depends only on the two uniforms above plus gbufferModelView.
+vec3 voxy_getSunVector() {
+    const vec2 sunRotationData = vec2(cos(sunPathRotation * 0.01745329251994f), -sin(sunPathRotation * 0.01745329251994f));
+    float ang = fract(timeAngle - 0.25f);
+    ang = (ang + (cos(ang * 3.14159265358979f) * -0.5f + 0.5f - ang) / 3.0f) * 6.28318530717959f;
+    return normalize((gbufferModelView * vec4(vec3(-sin(ang), cos(ang) * sunRotationData) * 2000.0f, 1.0f)).xyz);
+}
+
+//Face index layout matches the shading block below: high bits pick the axis (0 = Y, 1 = Z, 2 = X), low bit
+//picks its sign, so face 0/1 are down/up.
+vec3 voxy_faceNormal(uint face) {
+    float facing = (face & 1u) == 1u ? 1.0 : -1.0;
+    uint axis = face >> 1u;
+    if (axis == 0u) return vec3(0.0, facing, 0.0);
+    if (axis == 1u) return vec3(0.0, 0.0, facing);
+    return vec3(facing, 0.0, 0.0);
+}
+#endif
+
 uint packVec4(vec4 vec) {
     uvec4 vec_=uvec4(vec*255)<<uvec4(24,16,8,0);
     return vec_.x|vec_.y|vec_.z|vec_.w;
@@ -130,6 +181,46 @@ void main() {
     //the eye — the same convention cmdgen.comp uses for its cornerPos - cameraSubPos. (MVP already has the
     //camera translation folded in, so gl_Position cannot be reused for this.)
     voxyRelativePos = pointPos - cameraSubPos;
+    #endif
+
+    #ifdef DH_SHADER
+    {
+        //playerPos in the pack's dh_terrain means the vertex relative to the eye in world-aligned space,
+        //which is exactly pointPos - cameraSubPos; no matrix round-trip needed.
+        playerPos = pointPos - cameraSubPos;
+
+        //The pack derives these from gbufferModelView, so its normals and ours must share view space.
+        upVec = normalize(gbufferModelView[1].xyz);
+        eastVec = normalize(gbufferModelView[0].xyz);
+        northVec = normalize(gbufferModelView[2].xyz);
+        sunVec = voxy_getSunVector();
+        normal = normalize(mat3(gbufferModelView) * voxy_faceNormal(face));
+
+        //The pack's GetLightMapCoordinates() undoes the lightmap texel-centre inset, which collapses to
+        //simply level/15 — the value voxy already carries. Light byte is (block << 4) | sky.
+        uint dhLight = extractLightId(quad);
+        lmCoord = clamp(vec2(float((dhLight >> 4) & 0xFu), float(dhLight & 0xFu)) / 15.0, 0.0, 1.0);
+
+        //Only translucent geometry reaches the pack's dh_water program, and its entire water treatment is
+        //gated on this id, so it has to be set or dh_water does nothing at all.
+        mat = isTranslucent ? 12 : 0;//12 = DH_BLOCK_WATER
+
+        iris_FogFragCoord = 0.0;
+
+        voxy_uv = uv;
+        voxy_texData = uvec2(modelId, face);
+
+        //Biome/model tint. Alpha stays 1.0 because the pack reads glColor.a as vanilla AO, not opacity.
+        vec3 dhTint = vec3(1.0);
+        uint dhTintColour = model.colourTint;
+        if (modelHasBiomeLUT(model)) {
+            dhTintColour = colourData[dhTintColour + extractBiomeId(quad)];
+        }
+        if (dhTintColour != uint(-1)) {
+            dhTint = vec3(uvec3(dhTintColour) >> uvec3(16, 8, 0) & uvec3(0xFFu)) / 255.0;
+        }
+        voxy_vertexTint = vec4(dhTint, 1.0);
+    }
     #endif
 
     //Apply taa shift
