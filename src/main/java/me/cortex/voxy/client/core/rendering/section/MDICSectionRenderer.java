@@ -15,6 +15,7 @@ import me.cortex.voxy.client.core.rendering.util.DownloadStream;
 import me.cortex.voxy.client.core.rendering.util.LightMapHelper;
 import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
+import me.cortex.voxy.client.iris.VoxyDhBindings;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.world.WorldEngine;
 import org.joml.Matrix4f;
@@ -165,6 +166,9 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, viewport.positionScratchBuffer.id);
         LightMapHelper.bind(1);
         glBindTextureUnit(2, viewport.depthBoundingBuffer.getDepthTex().id);
+        //Republish for the shaderpack's DH programs, which sample it through their own injected copy of the
+        //depth-bound discard rather than through this unit.
+        VoxyDhBindings.setDepthBound(viewport.depthBoundingBuffer.getDepthTex().id);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, SharedIndexBuffer.INSTANCE.id());
         glBindBuffer(GL_DRAW_INDIRECT_BUFFER, viewport.drawCallBuffer.id);

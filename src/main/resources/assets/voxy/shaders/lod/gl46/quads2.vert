@@ -49,7 +49,7 @@ layout(location = 16) out float iris_FogFragCoord;
 //data are handed over and the injected fragment code redoes that same lookup.
 layout(location = 17) out vec4 voxy_vertexTint;
 layout(location = 18) out vec2 voxy_uv;
-layout(location = 19) flat out uvec2 voxy_texData;//x = modelId, y = face
+layout(location = 19) flat out uvec3 voxy_texData;//x = modelId, y = face, z = flags (bit0 = alpha cutout)
 
 uniform mat4 gbufferModelView;
 uniform float sunPathRotation;
@@ -208,7 +208,13 @@ void main() {
         iris_FogFragCoord = 0.0;
 
         voxy_uv = uv;
-        voxy_texData = uvec2(modelId, face);
+        //Same cutout derivation the normal path does below: the per-face flag, plus the override that only
+        //applies once a quad has been merged past a single block. Without it the pack's fragment, which has
+        //no cutout discard of its own (DH LoD is untextured so it never needed one), would render leaves and
+        //grass as opaque squares.
+        uint dhFlags = faceHasAlphaCuttout(faceData);
+        dhFlags |= uint(any(greaterThan(quadSize, ivec2(1)))) & faceHasAlphaCuttoutOverride(faceData);
+        voxy_texData = uvec3(modelId, face, dhFlags);
 
         //Biome/model tint. Alpha stays 1.0 because the pack reads glColor.a as vanilla AO, not opacity.
         vec3 dhTint = vec3(1.0);

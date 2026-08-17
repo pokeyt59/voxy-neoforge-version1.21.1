@@ -62,19 +62,44 @@ public class DhProgramSources {
     private static final String GL_COLOR_INJECTION = """
             in vec4 voxy_vertexTint;
             in vec2 voxy_uv;
-            flat in uvec2 voxy_texData;
+            flat in uvec3 voxy_texData;
             uniform sampler2D voxy_atlas;
-            vec4 voxy_sampleAtlas() {
+            uniform sampler2D voxy_depthBound;
+            vec2 voxy_atlasTexPos() {
                 vec2 tile;
                 vec2 inTile = modf(voxy_uv, tile) * (1.0 / (vec2(3.0, 2.0) * 256.0));
                 uint modelId = voxy_texData.x;
                 uint face = voxy_texData.y;
                 vec2 modelUV = vec2(modelId & 0xFFu, (modelId >> 8) & 0xFFu) * (1.0 / 256.0);
-                vec2 texPos = modelUV + (vec2(face >> 1u, face & 1u) * (1.0 / (vec2(3.0, 2.0) * 256.0))) + inTile;
+                return modelUV + (vec2(face >> 1u, face & 1u) * (1.0 / (vec2(3.0, 2.0) * 256.0))) + inTile;
+            }
+            vec4 voxy_sampleAtlas() {
                 vec2 smoothUV = voxy_uv * (1.0 / (vec2(3.0, 2.0) * 256.0));
-                return textureGrad(voxy_atlas, texPos, dFdx(smoothUV), dFdy(smoothUV));
+                return textureGrad(voxy_atlas, voxy_atlasTexPos(), dFdx(smoothUV), dFdy(smoothUV));
             }
             vec4 glColor = vec4(voxy_sampleAtlas().rgb * voxy_vertexTint.rgb, voxy_vertexTint.a);
+            """;
+
+    //Statements prepended to the pack fragment's main(). The pack's DH program has neither of these, because
+    //DH LoD is untextured and DH does its own occlusion, so dropping voxy's versions would show up as LoD
+    //punching through vanilla terrain and as leaves/grass rendering like opaque squares.
+    private static final String MAIN_ENTRY_ANCHOR = "void main() {";
+    private static final String MAIN_ENTRY_INJECTION = """
+            void main() {
+            {
+                //Voxy's depth-bound discard, mirroring quads.frag. The 2x2 max closes the 1-pixel
+                //rasterisation gaps between independently-instanced section AABBs that would otherwise show
+                //as hairline seams.
+                ivec2 voxy_fc = ivec2(gl_FragCoord.xy);
+                ivec2 voxy_sz = textureSize(voxy_depthBound, 0) - ivec2(1);
+                float voxy_m00 = texelFetch(voxy_depthBound, voxy_fc, 0).r;
+                float voxy_m10 = texelFetch(voxy_depthBound, min(voxy_fc + ivec2(1, 0), voxy_sz), 0).r;
+                float voxy_m01 = texelFetch(voxy_depthBound, min(voxy_fc + ivec2(0, 1), voxy_sz), 0).r;
+                float voxy_m11 = texelFetch(voxy_depthBound, min(voxy_fc + ivec2(1, 1), voxy_sz), 0).r;
+                if (gl_FragCoord.z < max(max(voxy_m00, voxy_m10), max(voxy_m01, voxy_m11))) discard;
+                //Alpha cutout. Sampled at lod 0 like quads.frag does, so mipping cannot erode thin geometry.
+                if ((voxy_texData.z & 1u) == 1u && textureLod(voxy_atlas, voxy_atlasTexPos(), 0).a <= 0.1) discard;
+            }
             """;
 
     private final String terrainFragment;
@@ -141,15 +166,21 @@ public class DhProgramSources {
     }
 
     private static String injectAtlasSampling(String name, String fragment) {
-        int occurrences = countOccurrences(fragment, GL_COLOR_DECL);
+        //Bail rather than guess on either anchor: a pack whose fragment is shaped differently would otherwise
+        //get a silently half-rewritten shader.
+        String patched = replaceExactlyOnce(name, fragment, GL_COLOR_DECL, GL_COLOR_INJECTION);
+        if (patched == null) return null;
+        return replaceExactlyOnce(name, patched, MAIN_ENTRY_ANCHOR, MAIN_ENTRY_INJECTION);
+    }
+
+    private static String replaceExactlyOnce(String name, String source, String anchor, String replacement) {
+        int occurrences = countOccurrences(source, anchor);
         if (occurrences != 1) {
-            //Bail rather than guess: a pack whose fragment declares glColor differently would otherwise get a
-            //silently half-rewritten shader.
-            Logger.error("[voxy-dh] " + name + ": expected exactly one '" + GL_COLOR_DECL + "', found "
-                    + occurrences + " — cannot inject texturing, skipping this pack's DH programs");
+            Logger.error("[voxy-dh] " + name + ": expected exactly one '" + anchor.strip() + "', found "
+                    + occurrences + " — cannot inject, skipping this pack's DH programs");
             return null;
         }
-        return fragment.replace(GL_COLOR_DECL, GL_COLOR_INJECTION);
+        return source.replace(anchor, replacement);
     }
 
     /**
@@ -210,7 +241,10 @@ public class DhProgramSources {
 
             //Voxy's block atlas, consumed by the texturing injected into the pack's fragment. Supplied lazily
             //because the model bakery has not created it yet at pipeline construction time.
-            builder.addDynamicSampler(VoxyAtlasBinding::currentAtlasTexture, "voxy_atlas");
+            builder.addDynamicSampler(VoxyDhBindings::currentAtlas, "voxy_atlas");
+            //The depth-bound buffer backing the discard injected into the pack fragment; republished
+            //per viewport, so likewise resolved lazily.
+            builder.addDynamicSampler(VoxyDhBindings::currentDepthBound, "voxy_depthBound");
 
             var program = builder.build();
             customUniforms.mapholderToPass(builder, program);
