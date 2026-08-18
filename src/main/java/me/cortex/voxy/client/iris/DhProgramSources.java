@@ -165,12 +165,32 @@ public class DhProgramSources {
         return injectAtlasSampling(name, patchedFragment);
     }
 
+    //Packs fade DH LoD in over distance because DH only ever produces geometry beyond vanilla render range,
+    //so anything nearer is assumed to be vanilla's job. Voxy's LoD instead starts right at the vanilla
+    //boundary and is occluded by its own depth-bound test, so leaving this in deletes the whole near and mid
+    //LoD band -- terrain vanishes into a void with only the most distant fragments surviving.
+    //Optional rather than required: a pack that does not fade simply will not contain it.
+    private static final String DH_DISTANCE_FADE = "color.a *= smoothstep(far * 0.5f, far * 0.7f, lengthCylinder);";
+    private static final String DH_DISTANCE_FADE_REPLACEMENT = "//voxy: distance fade-in removed, see DhProgramSources\n";
+
+    private static String removeDistanceFade(String name, String fragment) {
+        int occurrences = countOccurrences(fragment, DH_DISTANCE_FADE);
+        if (occurrences == 0) {
+            Logger.info("[voxy-dh] " + name + ": no DH distance fade found, leaving alpha alone");
+            return fragment;
+        }
+        Logger.info("[voxy-dh] " + name + ": removed " + occurrences + " DH distance fade(s)");
+        return fragment.replace(DH_DISTANCE_FADE, DH_DISTANCE_FADE_REPLACEMENT);
+    }
+
     private static String injectAtlasSampling(String name, String fragment) {
         //Bail rather than guess on either anchor: a pack whose fragment is shaped differently would otherwise
         //get a silently half-rewritten shader.
         String patched = replaceExactlyOnce(name, fragment, GL_COLOR_DECL, GL_COLOR_INJECTION);
         if (patched == null) return null;
-        return replaceExactlyOnce(name, patched, MAIN_ENTRY_ANCHOR, MAIN_ENTRY_INJECTION);
+        patched = replaceExactlyOnce(name, patched, MAIN_ENTRY_ANCHOR, MAIN_ENTRY_INJECTION);
+        if (patched == null) return null;
+        return removeDistanceFade(name, patched);
     }
 
     private static String replaceExactlyOnce(String name, String source, String anchor, String replacement) {
@@ -199,22 +219,27 @@ public class DhProgramSources {
      * bundled patch. Uniforms are deliberately left unbound: unbound uniforms link fine and read zero, which
      * keeps this isolated to the shader interface.
      */
-    public void verifyLinkage(net.irisshaders.iris.pipeline.IrisRenderingPipeline pipeline,
+    public DhPrograms buildPrograms(net.irisshaders.iris.pipeline.IrisRenderingPipeline pipeline,
                              net.irisshaders.iris.uniforms.custom.CustomUniforms customUniforms) {
         String vertex;
         try {
             vertex = buildDhVertexSource();
         } catch (Throwable t) {
             Logger.error("[voxy-dh] could not build the DH vertex shader source", t);
-            return;
+            return null;
         }
-        tryLink("dh_terrain", this.terrainFragment, vertex, pipeline, customUniforms);
-        if (this.waterFragment != null) {
-            tryLink("dh_water", this.waterFragment, vertex, pipeline, customUniforms);
+        var terrain = tryBuild("dh_terrain", this.terrainFragment, vertex, pipeline, customUniforms);
+        if (terrain == null) {
+            //Without an opaque program there is nothing worth switching to; voxy keeps its bundled patch.
+            return null;
         }
+        var water = this.waterFragment == null
+                ? null
+                : tryBuild("dh_water", this.waterFragment, vertex, pipeline, customUniforms);
+        return new DhPrograms(terrain, water, customUniforms);
     }
 
-    private static void tryLink(String name, String fragment, String vertex,
+    private static net.irisshaders.iris.gl.program.Program tryBuild(String name, String fragment, String vertex,
                                 net.irisshaders.iris.pipeline.IrisRenderingPipeline pipeline,
                                 net.irisshaders.iris.uniforms.custom.CustomUniforms customUniforms) {
         try {
@@ -249,9 +274,10 @@ public class DhProgramSources {
             var program = builder.build();
             customUniforms.mapholderToPass(builder, program);
             Logger.info("[voxy-dh] " + name + ": PROGRAM BUILT (uniforms + samplers bound)");
-            program.destroy();
+            return program;
         } catch (Throwable t) {
             Logger.error("[voxy-dh] " + name + ": PROGRAM BUILD FAILED", t);
+            return null;
         }
     }
 

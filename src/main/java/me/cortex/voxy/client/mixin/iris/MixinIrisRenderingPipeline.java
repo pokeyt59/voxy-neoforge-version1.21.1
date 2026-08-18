@@ -49,11 +49,11 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
             }
         }
 
-        //Proves the pack's own DH fragment programs link against a voxy-authored vertex shader. Renders
-        //nothing yet; this is the last unknown before building the real geometry path. See DhProgramSources.
+        //Build the shaderpack's own DH programs against voxy's LoD vertex shader, so LoD can be lit by the
+        //pack rather than by voxy's approximation. Null when unavailable; voxy then keeps its bundled patch.
         var dhSources = ((IGetDhProgramSources) programSet).voxy$getDhProgramSources();
-        if (dhSources != null) {
-            dhSources.verifyLinkage((IrisRenderingPipeline) (Object) this, this.customUniforms);
+        if (dhSources != null && this.pipeline != null) {
+            this.pipeline.dhPrograms = dhSources.buildPrograms((IrisRenderingPipeline) (Object) this, this.customUniforms);
         }
     }
 

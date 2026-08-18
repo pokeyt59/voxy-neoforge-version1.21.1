@@ -38,6 +38,8 @@ import static org.lwjgl.opengl.GL43C.GL_SHADER_STORAGE_BUFFER;
 
 public class IrisVoxyRenderPipelineData {
     public IrisVoxyRenderPipeline thePipeline;
+    //The shaderpack's own DH programs, when they could be prepared. Null keeps voxy on its bundled patch.
+    public DhPrograms dhPrograms;
     public final int[] opaqueDrawTargets;
     public final int[] translucentDrawTargets;
     private final String opaquePatch;

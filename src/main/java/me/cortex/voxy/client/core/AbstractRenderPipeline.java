@@ -222,6 +222,14 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
     }
 
     //null means dont transform the shader
+    /**
+     * @return the shaderpack's own DH programs when LoD should be drawn with them, otherwise null and the
+     *         renderer uses voxy's own shaders
+     */
+    public me.cortex.voxy.client.iris.DhPrograms getDhPrograms() {
+        return null;
+    }
+
     public String patchOpaqueShader(AbstractSectionRenderer<?,?> renderer, String input) {
         return null;
     }

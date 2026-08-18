@@ -41,6 +41,10 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
     //and that is the only route by which a pack's composite passes can resolve geometry past the vanilla far
     //plane instead of fogging it flat. See IrisShaderPatch.IMPERSONATE_DISTANT_HORIZONS.
     public boolean impersonateDistantHorizons = true;
+    //Draw LoD with the shaderpack's own dh_terrain/dh_water programs instead of voxy's bundled patch, so it
+    //gets the pack's real lighting -- shadows, water waves, reflections. Falls back automatically when the
+    //pack has no usable DH programs. Set false to force the bundled patch for comparison.
+    public boolean useDhShaderPrograms = true;
 
     private static VoxyConfig loadOrCreate() {
         if (VoxyCommon.isAvailable()) {

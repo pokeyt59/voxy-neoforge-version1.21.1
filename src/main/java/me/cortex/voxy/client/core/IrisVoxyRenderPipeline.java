@@ -217,6 +217,11 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
 
 
     @Override
+    public me.cortex.voxy.client.iris.DhPrograms getDhPrograms() {
+        return me.cortex.voxy.client.config.VoxyConfig.CONFIG.useDhShaderPrograms ? this.data.dhPrograms : null;
+    }
+
+    @Override
     public String patchOpaqueShader(AbstractSectionRenderer<?, ?> renderer, String input) {
         var builder = this.buildGenericShaderHeader(renderer, input);
 
