@@ -223,6 +223,9 @@ void main() {
         //Same polarity the normal path uses: the bit means "no mipmaps", so models that opted out keep
         //their unfiltered texels instead of being blurred by a mip the fragment would otherwise select.
         dhFlags |= uint(!modelHasMipmaps(model)) << 1;
+        //LoD level rides along in the high bits purely so the debug view can colour by it. Nothing in the
+        //normal shading path reads it.
+        dhFlags |= lodLevel << 8;
         voxy_texData = uvec3(modelId, face, dhFlags);
 
         //Biome/model tint. Alpha stays 1.0 because the pack reads glColor.a as vanilla AO, not opacity.

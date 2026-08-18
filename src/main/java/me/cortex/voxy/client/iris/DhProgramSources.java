@@ -119,6 +119,19 @@ public class DhProgramSources {
                 }
                 return textureGrad(voxy_atlas, texPos, dx, dy);
             }
+            //Distinct flat colours per LoD level rather than a ramp, so adjacent levels are unmistakable in a
+            //screenshot and the boundaries between them can be counted.
+            vec3 voxy_lodDebugColour() {
+                uint lvl = (voxy_texData.z >> 8) & 0xFu;
+                if (lvl == 0u) return vec3(1.0, 0.0, 0.0);
+                if (lvl == 1u) return vec3(1.0, 0.5, 0.0);
+                if (lvl == 2u) return vec3(1.0, 1.0, 0.0);
+                if (lvl == 3u) return vec3(0.0, 1.0, 0.0);
+                if (lvl == 4u) return vec3(0.0, 1.0, 1.0);
+                if (lvl == 5u) return vec3(0.0, 0.0, 1.0);
+                if (lvl == 6u) return vec3(1.0, 0.0, 1.0);
+                return vec3(1.0);
+            }
             vec4 glColor = vec4(voxy_sampleAtlas().rgb * voxy_vertexTint.rgb, voxy_vertexTint.a);
             """;
 
@@ -269,6 +282,12 @@ public class DhProgramSources {
                         + "float(mat == 1 || mat == 15 || mat == 6), "
                         + "float(mat == 13 || mat == 15), "
                         + "float(mat == 12 || mat == 6), 1.0);";
+                //LoD level, so whether the hierarchy actually subdivides can be read off the screen instead
+                //of inferred from how sharp things look: red = 0 (finest), orange, yellow, green, cyan,
+                //blue, magenta, white = 7+ (coarsest). Zooming should push colours toward red near the
+                //centre of view; if the picture is unchanged, detail selection is not responding at all and
+                //the fault is in traversal rather than in shading.
+                case 12 -> "iris_FragData0 = vec4(voxy_lodDebugColour(), 1.0);";
                 default -> FRAG_OUTPUT_DEBUG;
             };
             patched = replaceExactlyOnce(name, patched, FRAG_OUTPUT_WRITE, override);
