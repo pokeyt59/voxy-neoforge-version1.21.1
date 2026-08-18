@@ -59,12 +59,45 @@ public class DhMaterialMap {
             return DhProgramSources.DH_BLOCK_LEAVES;
         }
 
-        //Sound type stands in for the material family, which is close to how DH classifies. It has to come
-        //after the leaves check, since leaves also sound like grass.
-        if (state.getSoundType() == SoundType.GRASS) {
+        //Everything below keys off sound type, which tracks the material family closely and, unlike a block
+        //list, classifies modded blocks for free. Order is precedence: grass must precede dirt because a
+        //grass block is in BlockTags.DIRT, and terracotta must precede stone because it sounds like stone.
+        var sound = state.getSoundType();
+
+        if (sound == SoundType.GRASS) {
+            //After the leaves check above, since leaves also sound like grass.
             return DhProgramSources.DH_BLOCK_GRASS;
         }
+        if (state.is(BlockTags.TERRACOTTA)) {
+            return DhProgramSources.DH_BLOCK_TERRACOTTA;
+        }
+        if (sound == SoundType.SAND) {
+            return DhProgramSources.DH_BLOCK_SAND;
+        }
+        if (sound == SoundType.SNOW || sound == SoundType.POWDER_SNOW) {
+            return DhProgramSources.DH_BLOCK_SNOW;
+        }
+        if (sound == SoundType.WOOD) {
+            return DhProgramSources.DH_BLOCK_WOOD;
+        }
+        if (sound == SoundType.METAL) {
+            return DhProgramSources.DH_BLOCK_METAL;
+        }
+        if (sound == SoundType.DEEPSLATE || sound == SoundType.DEEPSLATE_BRICKS
+                || sound == SoundType.DEEPSLATE_TILES || sound == SoundType.POLISHED_DEEPSLATE) {
+            return DhProgramSources.DH_BLOCK_DEEPSLATE;
+        }
+        if (sound == SoundType.NETHERRACK || sound == SoundType.NETHER_BRICKS || sound == SoundType.BASALT
+                || sound == SoundType.SOUL_SAND || sound == SoundType.SOUL_SOIL) {
+            return DhProgramSources.DH_BLOCK_NETHER_STONE;
+        }
+        if (sound == SoundType.GRAVEL || state.is(BlockTags.DIRT)) {
+            return DhProgramSources.DH_BLOCK_DIRT;
+        }
+        if (sound == SoundType.STONE) {
+            return DhProgramSources.DH_BLOCK_STONE;
+        }
 
-        return 0;
+        return DhProgramSources.DH_BLOCK_UNKNOWN;
     }
 }

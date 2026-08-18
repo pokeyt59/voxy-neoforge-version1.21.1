@@ -39,12 +39,26 @@ public class DhProgramSources {
             "normal", "playerPos", "glColor", "iris_FogFragCoord"
     };
 
-    //DH material ids, as they appear already constant-folded in the patched source. Voxy maps its blocks onto
-    //these so the pack's per-material branches (leaves subsurface, grass smoothness, emissive, water) fire.
+    //DH material ids (EDhApiBlockMaterial ordinals). Voxy maps its blocks onto these so a pack's per-material
+    //branches fire — Complementary uses leaves, lava, water, grass and illuminated, but other packs branch on
+    //more, so the whole table is mapped rather than only the five this pack happens to read.
+    //Cross-checked two ways: read out of Complementary's constant-folded shader source, and against DH's
+    //published EDhApiBlockMaterial javadoc. Both agree.
+    public static final int DH_BLOCK_UNKNOWN = 0;
     public static final int DH_BLOCK_LEAVES = 1;
+    public static final int DH_BLOCK_STONE = 2;
+    public static final int DH_BLOCK_WOOD = 3;
+    public static final int DH_BLOCK_METAL = 4;
+    public static final int DH_BLOCK_DIRT = 5;
     public static final int DH_BLOCK_LAVA = 6;
+    public static final int DH_BLOCK_DEEPSLATE = 7;
+    public static final int DH_BLOCK_SNOW = 8;
+    public static final int DH_BLOCK_SAND = 9;
+    public static final int DH_BLOCK_TERRACOTTA = 10;
+    public static final int DH_BLOCK_NETHER_STONE = 11;
     public static final int DH_BLOCK_WATER = 12;
     public static final int DH_BLOCK_GRASS = 13;
+    public static final int DH_BLOCK_AIR = 14;
     public static final int DH_BLOCK_ILLUMINATED = 15;
 
     //The single line in the patched fragment that declares the vertex colour input.
