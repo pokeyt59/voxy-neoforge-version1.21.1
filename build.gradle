@@ -37,7 +37,14 @@ runs {
         workingDirectory project.file('run')
         // JDWP open, no suspend — attach IntelliJ to localhost:5005 if you want
         // live breakpoints / expression eval. Safe to leave on; only listens.
-        jvmArgument '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005'
+        //
+        // Overridable because a client that dies badly can leave the port bound: the process shows as
+        // terminated but its listening socket survives, and every relaunch then fails with
+        // "transport error 202: bind failed". -PdebugPort=5006 moves it, -PdebugPort=off drops the agent.
+        def debugPort = (project.findProperty('debugPort') ?: '5005').toString()
+        if (debugPort != 'off') {
+            jvmArgument "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:${debugPort}"
+        }
     }
     server {
         workingDirectory project.file('run-server')
