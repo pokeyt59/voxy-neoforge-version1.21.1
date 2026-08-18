@@ -72,15 +72,25 @@ public class Mipper {
                 case 7 -> I111;
                 default -> throw new IllegalStateException("Unexpected value: " + (max&0b111));
             };
-            //Visibility override: force sky-light to 15 on the picked corner. At LoD
-            //distance, accuracy of per-voxel shading matters less than terrain being
-            //visible at all. Without this, solid voxels whose every corner has sky=0
-            //(forest floor under dense canopy, exposed underground stone at cliff
-            //bases, dune walls in deep deserts) inherit sky=0 and render pitch-black
-            //via the lightmap, making LoD look like it's full of voids. Forcing sky=15
-            //matches the VoxelIngestService ring-chunk default and the cave-fill below.
-            //Block-light is preserved so torches/glowstone still tint the voxel correctly.
-            int packedLight = (Mapper.getLightId(picked) & 0xF0) | 0x0F;
+            //Visibility override, applied ONLY when the picked corner is fully sky-dark.
+            //
+            //The case this exists for: solid voxels whose every corner has sky=0 (forest floor under dense
+            //canopy, exposed underground stone at cliff bases, dune walls in deep deserts) inherit sky=0 and
+            //render pitch-black via the lightmap, making LoD look full of voids. Forcing sky=15 there matches
+            //the VoxelIngestService ring-chunk default and the cave-fill below, and at LoD distance being
+            //visible beats being precisely shaded.
+            //
+            //It used to be unconditional (`| 0x0F`), which made the sky-light tier of the selection key above
+            //dead code: that tier exists to pick the most sky-exposed corner among equally opaque ones, and
+            //the override then threw the result away. Everything coarser than level 0 was shaded as full
+            //daylight, so valleys, overhangs and cave mouths all flattened out at distance -- which defeats
+            //the point of routing LoD through the shaderpack's lighting in the first place.
+            //
+            //picked already carries the highest sky-light among the highest-opacity corners, so a non-zero
+            //value here is the best estimate available for this group and is kept. Block-light is preserved
+            //either way, so torches and glowstone still tint the voxel.
+            int pickedSky = Mapper.getLightId(picked) & 0x0F;
+            int packedLight = (Mapper.getLightId(picked) & 0xF0) | (pickedSky == 0 ? 0x0F : pickedSky);
             return withLight(picked, packedLight);
         } else {
             int blockLight = (Mapper.getLightId(I000) & 0xF0) + (Mapper.getLightId(I001) & 0xF0) + (Mapper.getLightId(I010) & 0xF0) + (Mapper.getLightId(I011) & 0xF0) +
