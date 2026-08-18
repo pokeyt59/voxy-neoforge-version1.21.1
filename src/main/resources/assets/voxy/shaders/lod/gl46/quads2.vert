@@ -14,8 +14,17 @@
 
 //#define DEBUG_RENDER
 
+#ifdef DH_SHADER
+//Deliberately NOT varyings under DH. The shaderpack's fragment never reads these, but leaving them as
+//outputs occupies locations 0 and 1, which is what forced the DH varyings below onto explicit locations --
+//and the pack declares its matching inputs with no location at all, so the pairs never got matched and every
+//varying arrived as zero. As plain globals the existing writes still compile and 0/1 are freed up.
+vec2 uv;
+uvec4 interData;
+#else
 layout(location = 0) out vec2 uv;
 layout(location = 1) out flat uvec4 interData;
+#endif
 
 #ifdef PATCHED_SHADER
 //Camera-relative, world-axis-aligned position of this vertex. A shader patch otherwise only receives uv and
@@ -30,26 +39,22 @@ layout(location = 2) out vec3 voxyRelativePos;
 //dictated by that fragment and must match exactly; they were read off the transformed source rather than
 //guessed. Deliberately declared without explicit locations so they link by name against a fragment we do
 //not control.
-//Explicit locations are required: this shader already binds uv at 0, interData at 1, voxyRelativePos at 2 and
-//quadDebug at 7, and unqualified outputs would be auto-assigned from 0 and collide with them ("multiple
-//bindings to output semantic ATTR0"). Starting at 8 clears all of them. The pack's fragment declares these
-//without locations, which is fine — a location on only one side still matches by name.
-layout(location = 8)  flat out int mat;
-layout(location = 9)  out vec2 lmCoord;
-layout(location = 10) flat out vec3 upVec;
-layout(location = 11) flat out vec3 sunVec;
-layout(location = 12) flat out vec3 northVec;
-layout(location = 13) flat out vec3 eastVec;
-layout(location = 14) out vec3 normal;
-layout(location = 15) out vec3 playerPos;
-layout(location = 16) out float iris_FogFragCoord;
+flat out int mat;
+out vec2 lmCoord;
+flat out vec3 upVec;
+flat out vec3 sunVec;
+flat out vec3 northVec;
+flat out vec3 eastVec;
+out vec3 normal;
+out vec3 playerPos;
+out float iris_FogFragCoord;
 //Injected by DhProgramSources in place of the pack's `in vec4 glColor`, because DH LoD is untextured and
 //voxy's is not. The atlas lookup cannot be reduced to a per-vertex uv: merged quads span several tiles and
 //repeat the texture, which quads.frag resolves with a per-pixel modf. So the raw uv and the per-quad tile
 //data are handed over and the injected fragment code redoes that same lookup.
-layout(location = 17) out vec4 voxy_vertexTint;
-layout(location = 18) out vec2 voxy_uv;
-layout(location = 19) flat out uvec3 voxy_texData;//x = modelId, y = face, z = flags (bit0 = alpha cutout)
+out vec4 voxy_vertexTint;
+out vec2 voxy_uv;
+flat out uvec3 voxy_texData;//x = modelId, y = face, z = flags (bit0 = alpha cutout)
 
 uniform mat4 gbufferModelView;
 uniform float sunPathRotation;

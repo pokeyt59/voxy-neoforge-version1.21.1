@@ -26,11 +26,22 @@ public final class VoxyDhBindings {
     private VoxyDhBindings() {}
 
     public static void setAtlas(int textureId) {
+        me.cortex.voxy.common.Logger.info("[voxy-dh] atlas published: " + textureId);
         atlas = textureId;
     }
 
-    public static void clearAtlas() {
-        atlas = 0;
+    /**
+     * Clears only if this is still the published atlas. Voxy can build a replacement ModelStore before
+     * freeing the old one, and an unconditional clear would then zero out the live atlas and leave the DH
+     * programs sampling nothing.
+     */
+    public static void clearAtlas(int textureId) {
+        if (atlas == textureId) {
+            me.cortex.voxy.common.Logger.info("[voxy-dh] atlas cleared: " + textureId);
+            atlas = 0;
+        } else {
+            me.cortex.voxy.common.Logger.info("[voxy-dh] stale atlas " + textureId + " freed, keeping live " + atlas);
+        }
     }
 
     public static int currentAtlas() {

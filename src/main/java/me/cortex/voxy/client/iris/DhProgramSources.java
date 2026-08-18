@@ -73,9 +73,20 @@ public class DhProgramSources {
                 vec2 modelUV = vec2(modelId & 0xFFu, (modelId >> 8) & 0xFFu) * (1.0 / 256.0);
                 return modelUV + (vec2(face >> 1u, face & 1u) * (1.0 / (vec2(3.0, 2.0) * 256.0))) + inTile;
             }
+            //Voxy allocates the atlas with a full mip chain but only populates up to the block atlas's mip
+            //level, and clamps GL_TEXTURE_MAX_LOD on its own sampler object to match. Iris binds voxy_atlas
+            //through its own sampler allocation, which never receives that clamp, so with the default
+            //NEAREST_MIPMAP_LINEAR filter any fragment whose derivatives select a higher mip samples
+            //unpopulated, zero-filled levels and comes back black. That lands precisely on LoD, which is
+            //distant and heavily minified, while nearby vanilla geometry picks low mips and looks fine.
+            //So the mip is selected explicitly here and clamped, rather than left to the sampler.
+            const float VOXY_ATLAS_MAX_LOD = 4.0;//matches vanilla's block atlas mip level
             vec4 voxy_sampleAtlas() {
                 vec2 smoothUV = voxy_uv * (1.0 / (vec2(3.0, 2.0) * 256.0));
-                return textureGrad(voxy_atlas, voxy_atlasTexPos(), dFdx(smoothUV), dFdy(smoothUV));
+                vec2 atlasSize = vec2(textureSize(voxy_atlas, 0));
+                float rho = max(length(dFdx(smoothUV) * atlasSize), length(dFdy(smoothUV) * atlasSize));
+                float lod = clamp(log2(max(rho, 1e-6)), 0.0, VOXY_ATLAS_MAX_LOD);
+                return textureLod(voxy_atlas, voxy_atlasTexPos(), lod);
             }
             vec4 glColor = vec4(voxy_sampleAtlas().rgb * voxy_vertexTint.rgb, voxy_vertexTint.a);
             """;
@@ -173,6 +184,9 @@ public class DhProgramSources {
     private static final String DH_DISTANCE_FADE = "color.a *= smoothstep(far * 0.5f, far * 0.7f, lengthCylinder);";
     private static final String DH_DISTANCE_FADE_REPLACEMENT = "//voxy: distance fade-in removed, see DhProgramSources\n";
 
+    private static final String FRAG_OUTPUT_WRITE = "iris_FragData0 = color;";
+    private static final String FRAG_OUTPUT_DEBUG = "iris_FragData0 = vec4(1.0, 0.0, 1.0, 1.0);";
+
     private static String removeDistanceFade(String name, String fragment) {
         int occurrences = countOccurrences(fragment, DH_DISTANCE_FADE);
         if (occurrences == 0) {
@@ -188,9 +202,41 @@ public class DhProgramSources {
         //get a silently half-rewritten shader.
         String patched = replaceExactlyOnce(name, fragment, GL_COLOR_DECL, GL_COLOR_INJECTION);
         if (patched == null) return null;
-        patched = replaceExactlyOnce(name, patched, MAIN_ENTRY_ANCHOR, MAIN_ENTRY_INJECTION);
+        int debug = me.cortex.voxy.client.config.VoxyConfig.CONFIG.dhDebugMode;
+        //Mode 2 drops voxy's own discards so they can be ruled in or out as the cause of missing LoD.
+        String mainInjection = debug >= 2 ? MAIN_ENTRY_ANCHOR : MAIN_ENTRY_INJECTION;
+        patched = replaceExactlyOnce(name, patched, MAIN_ENTRY_ANCHOR, mainInjection);
         if (patched == null) return null;
-        return removeDistanceFade(name, patched);
+        patched = removeDistanceFade(name, patched);
+        if (debug >= 1) {
+            //Overwrite the final colour to isolate where shading goes wrong. Modes 1/2 answered "are the
+            //fragments even surviving"; 3 onward each expose one input the pack's lighting depends on, so a
+            //wrong one shows up directly instead of having to be inferred from a black result.
+            String override = switch (debug) {
+                //Atlas x tint, i.e. the albedo fed to the pack. Black here means the texturing is at fault;
+                //a correct-looking texture means the fault is downstream in the lighting.
+                case 3 -> "iris_FragData0 = vec4(glColor.rgb, 1.0);";
+                //Light levels: red = block, green = sky. Black means voxy is handing over no light at all.
+                case 4 -> "iris_FragData0 = vec4(lmCoord, 0.0, 1.0);";
+                //View-space normal. Should shift coherently as the camera turns; a flat colour means the
+                //normals are constant and the pack's NdotU/NdotL terms will collapse.
+                case 5 -> "iris_FragData0 = vec4(normal * 0.5 + 0.5, 1.0);";
+                //Sun vector, likewise view space. Should change through the day/night cycle.
+                case 6 -> "iris_FragData0 = vec4(sunVec * 0.5 + 0.5, 1.0);";
+                //Camera-relative position, wrapped so scale errors are visible as banding.
+                case 7 -> "iris_FragData0 = vec4(fract(playerPos / 16.0), 1.0);";
+                //Atlas sample alone, with the tint taken out of the picture.
+                case 8 -> "iris_FragData0 = vec4(voxy_sampleAtlas().rgb, 1.0);";
+                //Vertex tint alone.
+                case 9 -> "iris_FragData0 = vec4(voxy_vertexTint.rgb, 1.0);";
+                //Raw atlas coordinate, to show whether the lookup lands anywhere sensible.
+                case 10 -> "iris_FragData0 = vec4(fract(voxy_atlasTexPos() * 256.0), 0.0, 1.0);";
+                default -> FRAG_OUTPUT_DEBUG;
+            };
+            patched = replaceExactlyOnce(name, patched, FRAG_OUTPUT_WRITE, override);
+            Logger.warn("[voxy-dh] " + name + ": DEBUG MODE " + debug + " active -> " + override.strip());
+        }
+        return patched;
     }
 
     private static String replaceExactlyOnce(String name, String source, String anchor, String replacement) {

@@ -45,6 +45,11 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
     //gets the pack's real lighting -- shadows, water waves, reflections. Falls back automatically when the
     //pack has no usable DH programs. Set false to force the bundled patch for comparison.
     public boolean useDhShaderPrograms = true;
+    //Diagnostic for the DH program path. 0 = off. 1 = force LoD fragments to solid magenta, keeping every
+    //discard, which separates "fragment was discarded" from "fragment survived but shaded wrong". 2 = also
+    //skip voxy's injected depth-bound and cutout discards, which isolates those as the cause. Requires a
+    //restart, since the programs are compiled once when the pipeline is built.
+    public int dhDebugMode = 0;
 
     private static VoxyConfig loadOrCreate() {
         if (VoxyCommon.isAvailable()) {

@@ -183,6 +183,9 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
         glEnable(GL_DEPTH_TEST);
         //When the shaderpack exposes usable DH programs, LoD is drawn with the pack's own shading instead of
         //voxy's. The geometry, buffers and draw call are identical either way -- only the program differs.
+        //Must precede the program bind: Program.use() resolves the sampler suppliers, so setting this
+        //afterwards in bindRenderingBuffers left the program sampling the previous frame's texture.
+        VoxyDhBindings.setDepthBound(viewport.depthBoundingBuffer.getDepthTex().id);
         var dhOpaque = this.pipeline.getDhPrograms();
         if (dhOpaque != null && dhOpaque.hasTerrain()) {
             dhOpaque.useTerrain();
@@ -225,6 +228,7 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
 
         glDisable(GL_CULL_FACE);
         glEnable(GL_DEPTH_TEST);
+        VoxyDhBindings.setDepthBound(viewport.depthBoundingBuffer.getDepthTex().id);
         var dhTranslucent = this.pipeline.getDhPrograms();
         if (dhTranslucent != null && dhTranslucent.hasTerrain()) {
             dhTranslucent.useWater();

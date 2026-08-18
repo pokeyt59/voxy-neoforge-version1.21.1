@@ -49,7 +49,7 @@ public class ModelStore {
     public void free() {
         this.modelBuffer.free();
         this.modelColourBuffer.free();
-        VoxyDhBindings.clearAtlas();
+        VoxyDhBindings.clearAtlas(this.textures.id);
         this.textures.free();
         glDeleteSamplers(this.blockSampler);
     }
