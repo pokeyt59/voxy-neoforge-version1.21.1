@@ -54,7 +54,7 @@ out float iris_FogFragCoord;
 //data are handed over and the injected fragment code redoes that same lookup.
 out vec4 voxy_vertexTint;
 out vec2 voxy_uv;
-flat out uvec3 voxy_texData;//x = modelId, y = face, z = flags (bit0 = alpha cutout)
+flat out uvec3 voxy_texData;//x = modelId, y = face, z = flags (bit0 = alpha cutout, bit1 = no mipmaps)
 
 uniform mat4 gbufferModelView;
 uniform float sunPathRotation;
@@ -220,6 +220,9 @@ void main() {
         //grass as opaque squares.
         uint dhFlags = faceHasAlphaCuttout(faceData);
         dhFlags |= uint(any(greaterThan(quadSize, ivec2(1)))) & faceHasAlphaCuttoutOverride(faceData);
+        //Same polarity the normal path uses: the bit means "no mipmaps", so models that opted out keep
+        //their unfiltered texels instead of being blurred by a mip the fragment would otherwise select.
+        dhFlags |= uint(!modelHasMipmaps(model)) << 1;
         voxy_texData = uvec3(modelId, face, dhFlags);
 
         //Biome/model tint. Alpha stays 1.0 because the pack reads glColor.a as vanilla AO, not opacity.

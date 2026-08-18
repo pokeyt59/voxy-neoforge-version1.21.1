@@ -94,13 +94,30 @@ public class DhProgramSources {
             //unpopulated, zero-filled levels and comes back black. That lands precisely on LoD, which is
             //distant and heavily minified, while nearby vanilla geometry picks low mips and looks fine.
             //So the mip is selected explicitly here and clamped, rather than left to the sampler.
+            //The clamp is applied by shortening the gradients rather than by resolving a single lod and
+            //calling textureLod. Collapsing to one lod also collapses the anisotropy: a scalar picks the
+            //longer axis, so terrain viewed at a grazing angle — which is most of a landscape seen from
+            //altitude, and all of it once zoomed — samples a far blurrier mip than it needs. Scaling both
+            //gradients by the same factor caps the mip while keeping their ratio, so the hardware still
+            //filters anisotropically and matches the textureGrad the normal fragment path uses.
             const float VOXY_ATLAS_MAX_LOD = 4.0;//matches vanilla's block atlas mip level
             vec4 voxy_sampleAtlas() {
+                vec2 texPos = voxy_atlasTexPos();
+                if ((voxy_texData.z & 2u) != 0u) {
+                    return textureLod(voxy_atlas, texPos, 0.0);
+                }
                 vec2 smoothUV = voxy_uv * (1.0 / (vec2(3.0, 2.0) * 256.0));
+                vec2 dx = dFdx(smoothUV);
+                vec2 dy = dFdy(smoothUV);
                 vec2 atlasSize = vec2(textureSize(voxy_atlas, 0));
-                float rho = max(length(dFdx(smoothUV) * atlasSize), length(dFdy(smoothUV) * atlasSize));
-                float lod = clamp(log2(max(rho, 1e-6)), 0.0, VOXY_ATLAS_MAX_LOD);
-                return textureLod(voxy_atlas, voxy_atlasTexPos(), lod);
+                float rho = max(length(dx * atlasSize), length(dy * atlasSize));
+                float maxRho = exp2(VOXY_ATLAS_MAX_LOD);
+                if (rho > maxRho) {
+                    float shrink = maxRho / rho;
+                    dx *= shrink;
+                    dy *= shrink;
+                }
+                return textureGrad(voxy_atlas, texPos, dx, dy);
             }
             vec4 glColor = vec4(voxy_sampleAtlas().rgb * voxy_vertexTint.rgb, voxy_vertexTint.a);
             """;
