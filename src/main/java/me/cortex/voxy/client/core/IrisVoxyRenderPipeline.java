@@ -68,7 +68,14 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
 
     @Override
     public void setupExtraModelBakeryData(ModelBakerySubsystem modelService) {
-        modelService.factory.setCustomBlockStateMapping(WorldRenderingSettings.INSTANCE.getBlockStateIds());
+        //customId carries whichever per-state id the active shading path needs. Drawing through the pack's own
+        //DH programs means it has to be a DH material id, so their leaves/grass/lava/illuminated branches fire;
+        //otherwise it stays iris's block.properties id, which is what voxy's bundled patch expects.
+        if (this.getDhPrograms() != null) {
+            modelService.factory.setCustomBlockStateMapping(me.cortex.voxy.client.iris.DhMaterialMap.build());
+        } else {
+            modelService.factory.setCustomBlockStateMapping(WorldRenderingSettings.INSTANCE.getBlockStateIds());
+        }
     }
 
     @Override

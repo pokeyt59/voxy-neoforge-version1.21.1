@@ -231,6 +231,13 @@ public class DhProgramSources {
                 case 9 -> "iris_FragData0 = vec4(voxy_vertexTint.rgb, 1.0);";
                 //Raw atlas coordinate, to show whether the lookup lands anywhere sensible.
                 case 10 -> "iris_FragData0 = vec4(fract(voxy_atlasTexPos() * 256.0), 0.0, 1.0);";
+                //DH material id, so the classification can be read off directly rather than inferred from
+                //how the lighting looks: red = leaves, green = grass, blue = water, yellow = illuminated,
+                //magenta = lava, black = unclassified terrain.
+                case 11 -> "iris_FragData0 = vec4("
+                        + "float(mat == 1 || mat == 15 || mat == 6), "
+                        + "float(mat == 13 || mat == 15), "
+                        + "float(mat == 12 || mat == 6), 1.0);";
                 default -> FRAG_OUTPUT_DEBUG;
             };
             patched = replaceExactlyOnce(name, patched, FRAG_OUTPUT_WRITE, override);

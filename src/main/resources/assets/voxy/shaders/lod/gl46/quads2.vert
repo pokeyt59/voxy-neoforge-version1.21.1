@@ -206,9 +206,10 @@ void main() {
         uint dhLight = extractLightId(quad);
         lmCoord = clamp(vec2(float((dhLight >> 4) & 0xFu), float(dhLight & 0xFu)) / 15.0, 0.0, 1.0);
 
-        //Only translucent geometry reaches the pack's dh_water program, and its entire water treatment is
-        //gated on this id, so it has to be set or dh_water does nothing at all.
-        mat = isTranslucent ? 12 : 0;//12 = DH_BLOCK_WATER
+        //DH material id, classified per block state by DhMaterialMap and carried through the bakery in
+        //customId. The pack gates its leaves, grass, lava and illuminated treatments on this, and dh_water's
+        //entire water path on the water id, so anything unclassified stays 0 and is shaded as plain terrain.
+        mat = int(model.customId);
 
         iris_FogFragCoord = 0.0;
 
