@@ -12,6 +12,8 @@ import java.util.stream.Stream;
 public class Logger {
     public static boolean INSERT_CLASS = true;
     public static boolean SHUTUP = false;
+    /** Gates trace(). Set from the voxy config at load; stays false on the dedicated server. */
+    public static boolean VERBOSE = false;
     private static final org.slf4j.Logger LOGGER = LoggerFactory.getLogger("Voxy");
 
 
@@ -73,6 +75,23 @@ public class Logger {
             }
         }
         LOGGER.warn((INSERT_CLASS?("["+callClsName()+"]: "):"") + Stream.of(args).map(Logger::objToString).collect(Collectors.joining(" ")), throwable);
+    }
+
+    /**
+     * Per-event diagnostics: chunk gating, depth-bound churn, LoD thresholds, shader binding churn.
+     *
+     * <p>Off by default because these fire per section and per frame -- left on they bury the genuinely
+     * useful one-shot lines (program built, materials classified) and slow the render thread with string
+     * building. Enable with verbose_logging in the voxy config.
+     *
+     * <p>Deliberately not delegating to info(): callClsName() reads a fixed stack depth, so a delegating
+     * call would attribute every line to Logger itself rather than to the caller.
+     */
+    public static void trace(Object... args) {
+        if (SHUTUP || !VERBOSE) {
+            return;
+        }
+        LOGGER.info((INSERT_CLASS?("["+callClsName()+"]: "):"") + Stream.of(args).map(Logger::objToString).collect(Collectors.joining(" ")));
     }
 
     public static void info(Object... args) {

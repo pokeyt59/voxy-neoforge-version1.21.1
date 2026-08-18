@@ -197,7 +197,7 @@ public class HierarchicalOcclusionTraverser {
             //Render list size is the observable consequence of the descend test: if minSSS is reaching the
             //shader, raising subDivisionSize must shrink this. If it does not move, the uniform is not
             //arriving and no amount of threshold tuning will matter.
-            me.cortex.voxy.common.Logger.info("[voxy-lod] viewport=" + viewport.width + "x" + viewport.height
+            me.cortex.voxy.common.Logger.trace("[voxy-lod] viewport=" + viewport.width + "x" + viewport.height
                     + " subDiv=" + VoxyConfig.CONFIG.subDivisionSize + " minSSS=" + minSSS
                     + " HRS=" + java.util.Arrays.toString(RenderStatistics.hierarchicalRenderSections)
                     + " HTC=" + java.util.Arrays.toString(RenderStatistics.hierarchicalTraversalCounts));

@@ -121,9 +121,9 @@ public class MixinRenderSectionManager {
             // never ingested, leaving black voids in the LoD ring. Accept any non-zero status; the
             // null light copy is already handled below.
             if (this.cachedChunkStatus == 0) {
-                Logger.info("[voxy-trace] gate skip status=0 sec=("+x+","+y+","+z+")");
+                Logger.trace("[voxy-trace] gate skip status=0 sec=("+x+","+y+","+z+")");
             } else if (this.cachedChunkStatus != 3) {
-                Logger.info("[voxy-trace] gate loose-accept status="+this.cachedChunkStatus+" sec=("+x+","+y+","+z+")");
+                Logger.trace("[voxy-trace] gate loose-accept status="+this.cachedChunkStatus+" sec=("+x+","+y+","+z+")");
             }
             if (this.cachedChunkStatus != 0) {
                 var section = this.level.getChunk(x,z).getSection(y-this.bottomSectionY);
@@ -155,10 +155,10 @@ public class MixinRenderSectionManager {
             var ingestSvc = (system.getEngine().instanceIn != null)
                     ? system.getEngine().instanceIn.getIngestService()
                     : null;
-            Logger.info("[voxy-trace] depth-bound REMOVE sec=("+x+","+y+","+z+") (wasStatus="+this.cachedChunkStatus+", deferring="+(ingestSvc!=null && ingestSvc.isIngestPending(pos))+")");
+            Logger.trace("[voxy-trace] depth-bound REMOVE sec=("+x+","+y+","+z+") (wasStatus="+this.cachedChunkStatus+", deferring="+(ingestSvc!=null && ingestSvc.isIngestPending(pos))+")");
             system.chunkBoundRenderer.deferRemoveSection(pos, ingestSvc);
         } else {//Add
-            Logger.info("[voxy-trace] depth-bound ADD sec=("+x+","+y+","+z+")");
+            Logger.trace("[voxy-trace] depth-bound ADD sec=("+x+","+y+","+z+")");
             system.chunkBoundRenderer.addSection(pos);
         }
         return true;

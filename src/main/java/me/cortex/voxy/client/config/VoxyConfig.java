@@ -23,6 +23,10 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
             .create();
 
     public static VoxyConfig CONFIG = loadOrCreate();
+    static {
+        //Applied here rather than at each call site so the flag is live before anything logs.
+        me.cortex.voxy.common.Logger.VERBOSE = CONFIG.verboseLogging;
+    }
 
     public boolean enabled = true;
     public boolean enableRendering = true;
@@ -50,6 +54,9 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
     //skip voxy's injected depth-bound and cutout discards, which isolates those as the cause. Requires a
     //restart, since the programs are compiled once when the pipeline is built.
     public int dhDebugMode = 0;
+    //Per-event diagnostic logging (chunk gating, depth-bound churn, LoD thresholds, atlas rebinds). Off by
+    //default: these fire per section and per frame, and bury the one-shot lines that are actually useful.
+    public boolean verboseLogging = false;
 
     private static VoxyConfig loadOrCreate() {
         if (VoxyCommon.isAvailable()) {

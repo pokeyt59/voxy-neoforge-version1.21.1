@@ -26,7 +26,7 @@ public final class VoxyDhBindings {
     private VoxyDhBindings() {}
 
     public static void setAtlas(int textureId) {
-        me.cortex.voxy.common.Logger.info("[voxy-dh] atlas published: " + textureId);
+        me.cortex.voxy.common.Logger.trace("[voxy-dh] atlas published: " + textureId);
         atlas = textureId;
     }
 
@@ -37,10 +37,10 @@ public final class VoxyDhBindings {
      */
     public static void clearAtlas(int textureId) {
         if (atlas == textureId) {
-            me.cortex.voxy.common.Logger.info("[voxy-dh] atlas cleared: " + textureId);
+            me.cortex.voxy.common.Logger.trace("[voxy-dh] atlas cleared: " + textureId);
             atlas = 0;
         } else {
-            me.cortex.voxy.common.Logger.info("[voxy-dh] stale atlas " + textureId + " freed, keeping live " + atlas);
+            me.cortex.voxy.common.Logger.trace("[voxy-dh] stale atlas " + textureId + " freed, keeping live " + atlas);
         }
     }
 

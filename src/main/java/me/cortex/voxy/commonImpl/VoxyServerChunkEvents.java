@@ -35,9 +35,9 @@ public class VoxyServerChunkEvents {
         //client's view (Chunky pregen, force-loaded chunks), and with a 256-chunk reporting interval its
         //absence from a log was previously indistinguishable from the hook never firing at all.
         if (n == 1) {
-            Logger.info("[voxy-trace] server-side chunk ingest active (covers Chunky pregen / force-loaded chunks)");
+            Logger.trace("[voxy-trace] server-side chunk ingest active (covers Chunky pregen / force-loaded chunks)");
         } else if ((n & 0xFF) == 0) {
-            Logger.info("[voxy-trace] server-side chunk-load ingests: " + n);
+            Logger.trace("[voxy-trace] server-side chunk-load ingests: " + n);
         }
     }
 }
