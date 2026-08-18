@@ -173,6 +173,9 @@ public class HierarchicalOcclusionTraverser {
         }
     }
 
+    //Throttled so the descend threshold and the viewport it is derived from can be read off a normal run.
+    private static int TRAVERSAL_LOG_COUNTER = 0;
+
     private void uploadUniform(Viewport<?> viewport) {
         long ptr = UploadStream.INSTANCE.upload(this.uniformBuffer, 0, 1024);
 
@@ -189,7 +192,17 @@ public class HierarchicalOcclusionTraverser {
 
         final float screenspaceAreaDecreasingSize = VoxyConfig.CONFIG.subDivisionSize*VoxyConfig.CONFIG.subDivisionSize;
         //Screen space size for descending
-        MemoryUtil.memPutFloat(ptr, (float) (screenspaceAreaDecreasingSize) /(viewport.width*viewport.height)); ptr += 4;
+        final float minSSS = (float) (screenspaceAreaDecreasingSize) /(viewport.width*viewport.height);
+        if ((TRAVERSAL_LOG_COUNTER++ % 300) == 0) {
+            //Render list size is the observable consequence of the descend test: if minSSS is reaching the
+            //shader, raising subDivisionSize must shrink this. If it does not move, the uniform is not
+            //arriving and no amount of threshold tuning will matter.
+            me.cortex.voxy.common.Logger.info("[voxy-lod] viewport=" + viewport.width + "x" + viewport.height
+                    + " subDiv=" + VoxyConfig.CONFIG.subDivisionSize + " minSSS=" + minSSS
+                    + " HRS=" + java.util.Arrays.toString(RenderStatistics.hierarchicalRenderSections)
+                    + " HTC=" + java.util.Arrays.toString(RenderStatistics.hierarchicalTraversalCounts));
+        }
+        MemoryUtil.memPutFloat(ptr, minSSS); ptr += 4;
 
         setFrustum(viewport, ptr); ptr += 4*4*6;
 

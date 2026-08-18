@@ -7,7 +7,9 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public class RenderStatistics {
-    public static boolean enabled = false;
+    //Initialised from config rather than hardcoded false, so statistics can be turned on for a run without
+    //having to reach the options GUI first. The GUI toggle below writes back to the same field.
+    public static boolean enabled = me.cortex.voxy.client.config.VoxyConfig.CONFIG.renderStatistics;
 
     public static final int[] hierarchicalTraversalCounts = new int[WorldEngine.MAX_LOD_LAYER+1];
     public static final int[] hierarchicalRenderSections = new int[WorldEngine.MAX_LOD_LAYER+1];
