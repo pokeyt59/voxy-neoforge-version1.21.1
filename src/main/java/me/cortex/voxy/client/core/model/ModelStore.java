@@ -41,6 +41,9 @@ public class ModelStore {
         glSamplerParameteri(this.blockSampler, GL_TEXTURE_MIN_LOD, 0);
         glSamplerParameteri(this.blockSampler, GL_TEXTURE_MAX_LOD, mipLvl);
 
+        //Publish the populated mip bound with it: the DH programs are built before this class exists, so
+        //they cannot read it at compile time and take it as a uniform instead.
+        VoxyDhBindings.setAtlasMaxLod(mipLvl);
         //Publish the atlas so the shaderpack's DH programs can sample it; they are built before this exists.
         VoxyDhBindings.setAtlas(this.textures.id);//Integer.numberOfTrailingZeros(ModelFactory.MODEL_TEXTURE_SIZE)
     }

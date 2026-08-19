@@ -100,7 +100,7 @@ public class DhProgramSources {
             //altitude, and all of it once zoomed — samples a far blurrier mip than it needs. Scaling both
             //gradients by the same factor caps the mip while keeping their ratio, so the hardware still
             //filters anisotropically and matches the textureGrad the normal fragment path uses.
-            const float VOXY_ATLAS_MAX_LOD = %VOXY_ATLAS_MAX_LOD%;//vanilla's block atlas mip level
+            uniform float voxy_atlasMaxLod;//populated mip levels of voxy's atlas, published by ModelStore
             vec4 voxy_sampleAtlas() {
                 vec2 texPos = voxy_atlasTexPos();
                 if ((voxy_texData.z & 2u) != 0u) {
@@ -111,7 +111,7 @@ public class DhProgramSources {
                 vec2 dy = dFdy(smoothUV);
                 vec2 atlasSize = vec2(textureSize(voxy_atlas, 0));
                 float rho = max(length(dx * atlasSize), length(dy * atlasSize));
-                float maxRho = exp2(VOXY_ATLAS_MAX_LOD);
+                float maxRho = exp2(voxy_atlasMaxLod);
                 if (rho > maxRho) {
                     float shrink = maxRho / rho;
                     dx *= shrink;
@@ -244,8 +244,7 @@ public class DhProgramSources {
     private static String injectAtlasSampling(String name, String fragment) {
         //Bail rather than guess on either anchor: a pack whose fragment is shaped differently would otherwise
         //get a silently half-rewritten shader.
-        String patched = replaceExactlyOnce(name, fragment, GL_COLOR_DECL,
-                GL_COLOR_INJECTION.replace("%VOXY_ATLAS_MAX_LOD%", blockAtlasMipLevel() + ".0"));
+        String patched = replaceExactlyOnce(name, fragment, GL_COLOR_DECL, GL_COLOR_INJECTION);
         if (patched == null) return null;
         int debug = me.cortex.voxy.client.config.VoxyConfig.CONFIG.dhDebugMode;
         //Mode 2 drops voxy's own discards so they can be ruled in or out as the cause of missing LoD.
@@ -295,33 +294,6 @@ public class DhProgramSources {
             Logger.warn("[voxy-dh] " + name + ": DEBUG MODE " + debug + " active -> " + override.strip());
         }
         return patched;
-    }
-
-    /**
-     * The mip level vanilla's block atlas is built to, which is what voxy populates its own atlas up to.
-     *
-     * <p>Voxy allocates a full mip chain but only fills this many levels, and clamps GL_TEXTURE_MAX_LOD on its
-     * own sampler to match (ModelStore). Iris samples through a sampler allocation of its own that never gets
-     * that clamp, so the bound has to be reapplied inside the shader — and it has to be the real value, not a
-     * guess. Hardcoding 4 happens to work only because 4 is the default Mipmap Levels setting; at any other
-     * setting the shader would read unpopulated levels and distant LoD would come back black.
-     *
-     * <p>Read at program-build time rather than passed in, because the programs are built before ModelStore
-     * exists. The atlas itself is loaded well before any pipeline is constructed, so it is available here.
-     */
-    private static int blockAtlasMipLevel() {
-        try {
-            var texture = net.minecraft.client.Minecraft.getInstance().getTextureManager()
-                    .getTexture(net.minecraft.resources.ResourceLocation
-                            .fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png"));
-            if (texture instanceof net.minecraft.client.renderer.texture.TextureAtlas atlas) {
-                return atlas.mipLevel;
-            }
-            Logger.warn("[voxy-dh] block atlas was not a TextureAtlas, falling back to mip level 4");
-        } catch (Exception e) {
-            Logger.warn("[voxy-dh] could not read the block atlas mip level, falling back to 4: " + e);
-        }
-        return 4;
     }
 
     private static String replaceExactlyOnce(String name, String source, String anchor, String replacement) {
@@ -401,6 +373,11 @@ public class DhProgramSources {
             //The depth-bound buffer backing the discard injected into the pack fragment; republished
             //per viewport, so likewise resolved lazily.
             builder.addDynamicSampler(VoxyDhBindings::currentDepthBound, "voxy_depthBound");
+            //Per-frame rather than ONCE: a resource reload rebuilds ModelStore, and the mipmap video setting
+            //can change under us, without these programs being rebuilt.
+            builder.uniform1f(net.irisshaders.iris.gl.uniform.UniformUpdateFrequency.PER_FRAME,
+                    "voxy_atlasMaxLod",
+                    (java.util.function.IntSupplier) VoxyDhBindings::currentAtlasMaxLod);
 
             var program = builder.build();
             customUniforms.mapholderToPass(builder, program);

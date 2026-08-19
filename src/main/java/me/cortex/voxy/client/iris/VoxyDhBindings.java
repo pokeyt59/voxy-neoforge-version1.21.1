@@ -22,6 +22,9 @@ package me.cortex.voxy.client.iris;
 public final class VoxyDhBindings {
     private static volatile int atlas = 0;
     private static volatile int depthBound = 0;
+    //Vanilla's default Mipmap Levels, used only for the window between program build and ModelStore
+    //creation. ModelStore overwrites it with the real value as soon as it publishes the atlas.
+    private static volatile int atlasMaxLod = 4;
 
     private VoxyDhBindings() {}
 
@@ -42,6 +45,20 @@ public final class VoxyDhBindings {
         } else {
             me.cortex.voxy.common.Logger.trace("[voxy-dh] stale atlas " + textureId + " freed, keeping live " + atlas);
         }
+    }
+
+    /**
+     * The mip level voxy actually populates its atlas up to, matching the clamp ModelStore puts on its own
+     * sampler. Iris samples through a sampler allocation that never receives that clamp, so the shader has to
+     * reapply the bound itself -- and it cannot be baked into the source, because the programs are built
+     * before Minecraft's texture manager exists, let alone the block atlas.
+     */
+    public static void setAtlasMaxLod(int maxLod) {
+        atlasMaxLod = maxLod;
+    }
+
+    public static int currentAtlasMaxLod() {
+        return atlasMaxLod;
     }
 
     public static int currentAtlas() {
