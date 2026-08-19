@@ -160,9 +160,12 @@ public class DhProgramSources {
     private final String terrainFragment;
     private final String waterFragment;
 
-    private DhProgramSources(String terrainFragment, String waterFragment) {
+    private final String taaJitter;
+
+    private DhProgramSources(String terrainFragment, String waterFragment, String taaJitter) {
         this.terrainFragment = terrainFragment;
         this.waterFragment = waterFragment;
+        this.taaJitter = taaJitter;
     }
 
     public String getTerrainFragment() {
@@ -180,22 +183,27 @@ public class DhProgramSources {
      */
     public static DhProgramSources create(AbsolutePackPath directory, Function<AbsolutePackPath, String> sourceProvider) {
         try {
-            String terrain = prepare("dh_terrain", directory, sourceProvider);
+            Prepared terrain = prepare("dh_terrain", directory, sourceProvider);
             if (terrain == null) {
                 Logger.info("[voxy-dh] pack has no usable dh_terrain, keeping voxy's bundled shader patch");
                 return null;
             }
-            String water = prepare("dh_water", directory, sourceProvider);
-            Logger.info("[voxy-dh] prepared pack DH programs: terrain=" + terrain.length()
-                    + " chars, water=" + (water == null ? "absent" : water.length() + " chars"));
-            return new DhProgramSources(terrain, water);
+            Prepared water = prepare("dh_water", directory, sourceProvider);
+            Logger.info("[voxy-dh] prepared pack DH programs: terrain=" + terrain.fragment().length()
+                    + " chars, water=" + (water == null ? "absent" : water.fragment().length() + " chars"));
+            //Terrain's jitter drives both: voxy compiles one vertex shader shared by both programs.
+            return new DhProgramSources(terrain.fragment(),
+                    water == null ? null : water.fragment(), terrain.taaJitter());
         } catch (Throwable t) {
             Logger.error("[voxy-dh] failed to prepare pack DH programs, keeping voxy's bundled shader patch", t);
             return null;
         }
     }
 
-    private static String prepare(String name, AbsolutePackPath directory, Function<AbsolutePackPath, String> sourceProvider) {
+    /** A prepared program: the injected fragment, plus the pack's own TAA jitter lifted from its vertex. */
+    private record Prepared(String fragment, String taaJitter) {}
+
+    private static Prepared prepare(String name, AbsolutePackPath directory, Function<AbsolutePackPath, String> sourceProvider) {
         String vertex = sourceProvider.apply(directory.resolve(name + ".vsh"));
         String fragment = sourceProvider.apply(directory.resolve(name + ".fsh"));
         if (fragment == null) {
@@ -217,7 +225,49 @@ public class DhProgramSources {
             return null;
         }
 
-        return injectAtlasSampling(name, patchedFragment);
+        String injected = injectAtlasSampling(name, patchedFragment);
+        if (injected == null) {
+            return null;
+        }
+        return new Prepared(injected, extractTaaJitter(name, patched.get(PatchShaderType.VERTEX)));
+    }
+
+    //Kept deliberately narrow: if a pack writes its jitter differently we fall through to the passthrough
+    //rather than injecting something wrong.
+    private static final java.util.regex.Pattern JITTER_TABLE = java.util.regex.Pattern.compile(
+            "vec2\\s+jitterOffsets\\s*\\[[^\\]]*\\]\\s*=\\s*vec2\\s*\\[[^\\]]*\\]\\s*\\([^;]*\\)\\s*;");
+    private static final java.util.regex.Pattern JITTER_FUNC = java.util.regex.Pattern.compile(
+            "vec2\\s+TAAJitter\\s*\\([^)]*\\)\\s*\\{[^}]*\\}");
+
+    /**
+     * Lifts the pack's own TAA jitter out of its DH vertex shader.
+     *
+     * <p>Voxy replaces that vertex shader wholesale, which silently dropped the jitter. That is not merely a
+     * loss of antialiasing: the pack's DH fragment reprojects with {@code TAAJitter(screenPos.xy, -0.5f)} and
+     * so assumes the geometry was jittered, while TAA keeps accumulating over unjittered LoD. The result is a
+     * permanent smear that no amount of zooming resolves.
+     *
+     * <p>Lifted rather than reimplemented so it tracks the pack's own offsets and scaling, and so a pack with
+     * TAA switched off gets a passthrough instead of jitter it never asked for.
+     *
+     * @return GLSL defining {@code voxy_dhTaaJitter}, never null
+     */
+    private static String extractTaaJitter(String name, String patchedVertex) {
+        String passthrough = "vec2 voxy_dhTaaJitter(vec2 coord, float w) { return coord; }";
+        if (patchedVertex == null || !patchedVertex.contains("TAAJitter(gl_Position")) {
+            Logger.info("[voxy-dh] " + name + ": pack does not jitter its DH vertices, leaving LoD unjittered");
+            return passthrough;
+        }
+        var table = JITTER_TABLE.matcher(patchedVertex);
+        var func = JITTER_FUNC.matcher(patchedVertex);
+        if (!table.find() || !func.find()) {
+            Logger.warn("[voxy-dh] " + name + ": pack jitters its DH vertices but the jitter could not be"
+                    + " lifted; LoD will smear under TAA");
+            return passthrough;
+        }
+        Logger.info("[voxy-dh] " + name + ": lifted the pack's TAA jitter into voxy's LoD vertex shader");
+        return table.group() + "\n" + func.group()
+                + "\nvec2 voxy_dhTaaJitter(vec2 coord, float w) { return TAAJitter(coord, w); }";
     }
 
     //Packs fade DH LoD in over distance because DH only ever produces geometry beyond vanilla render range,
@@ -310,10 +360,11 @@ public class DhProgramSources {
      * Builds voxy's real LoD vertex shader with the DH varying block enabled. Using this rather than a stub
      * means the link test also proves the vertex side and the injected fragment code agree on the interface.
      */
-    public static String buildDhVertexSource() {
+    public String buildDhVertexSource() {
         String source = me.cortex.voxy.client.core.gl.shader.ShaderLoader.parse("voxy:lod/gl46/quads2.vert");
         //ShaderLoader prepends a single canonical #version line; the define has to land after it.
-        return source.replaceFirst("(?m)^(#version[^\\n]*\\n)", "$1#define DH_SHADER\n");
+        source = source.replaceFirst("(?m)^(#version[^\\n]*\\n)", "$1#define DH_SHADER\n");
+        return source.replace("//%VOXY_DH_TAA%", this.taaJitter);
     }
 
     /**

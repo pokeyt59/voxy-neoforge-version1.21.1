@@ -56,6 +56,13 @@ out vec4 voxy_vertexTint;
 out vec2 voxy_uv;
 flat out uvec3 voxy_texData;//x = modelId, y = face, z = flags (bit0 = alpha cutout, bit1 = no mipmaps)
 
+//Needed by the pack's own TAA jitter, lifted into this shader by DhProgramSources. All three are standard
+//iris uniforms and are already bound via CommonUniforms.addDynamicUniforms.
+uniform float framemod8;
+uniform float viewWidth;
+uniform float viewHeight;
+//DhProgramSources substitutes the pack's jitter here, or a passthrough when the pack does not jitter.
+//%VOXY_DH_TAA%
 uniform mat4 gbufferModelView;
 uniform float sunPathRotation;
 uniform float timeAngle;
@@ -242,7 +249,15 @@ void main() {
     #endif
 
     //Apply taa shift
+    #ifdef DH_SHADER
+    //The pack's DH programs jitter in their own vertex shader, which we replaced with this one, and their
+    //fragment reprojects assuming that jitter happened (TAAJitter(screenPos.xy, -0.5f)). Leaving it out does
+    //not merely skip antialiasing -- TAA keeps accumulating over unjittered geometry, so LoD smears and never
+    //resolves, at any zoom level.
+    gl_Position.xy = voxy_dhTaaJitter(gl_Position.xy, gl_Position.w);
+    #else
     gl_Position.xy += taaShift()*gl_Position.w;
+    #endif
 
 
 
