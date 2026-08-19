@@ -338,6 +338,14 @@ public class DhProgramSources {
                 //centre of view; if the picture is unchanged, detail selection is not responding at all and
                 //the fault is in traversal rather than in shading.
                 case 12 -> "iris_FragData0 = vec4(voxy_lodDebugColour(), 1.0);";
+                //Vertical 64px stripes alternating forced-mip-0 against the normal sampling path, so both
+                //appear on the SAME surface in one screenshot. If the stripes differ, too high a mip is being
+                //selected and the fault is in the LOD computation. If they are indistinguishable, mip
+                //selection is innocent and the atlas content is soft at level 0 -- i.e. the bakery, or mip
+                //bleed between neighbouring tiles, not the sampling.
+                case 13 -> "iris_FragData0 = vec4(mod(floor(gl_FragCoord.x / 64.0), 2.0) < 1.0"
+                        + " ? textureLod(voxy_atlas, voxy_atlasTexPos(), 0.0).rgb"
+                        + " : voxy_sampleAtlas().rgb, 1.0);";
                 default -> FRAG_OUTPUT_DEBUG;
             };
             patched = replaceExactlyOnce(name, patched, FRAG_OUTPUT_WRITE, override);
